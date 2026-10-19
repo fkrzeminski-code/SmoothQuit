@@ -54,7 +54,7 @@ Accessibility is a powerful system permission. SmoothQuit uses public AX APIs to
 
 ## Build from source
 
-Use full Xcode with its command-line tools selected. The release script was verified with Xcode 27.1; it downloads no dependencies.
+Use full Xcode 27.1 or newer with its command-line tools selected (including Icon Composer support). The release script was verified with Xcode 27.1; it downloads no dependencies.
 
 ```sh
 git clone https://github.com/fkrzeminski-code/SmoothQuit.git
@@ -63,7 +63,7 @@ swift test
 ./scripts/build.sh
 ```
 
-Output: `Builds/Preview-1.3.0/SmoothQuit.app` and `SmoothQuit.dmg`, with build/test/signature reports and a source snapshot. The script does not install or launch the app. Build products are ignored by Git.
+Output: `Builds/Preview-1.3.1/SmoothQuit.app` and `SmoothQuit.dmg`, with build/test/signature reports and a source snapshot. The script does not install or launch the app. Build products are ignored by Git.
 
 Open `Package.swift` in Xcode to work on the project. SwiftUI and AppKit provide the interface; AXObserver, NSWorkspace and CoreGraphics provide observation. There are no third-party runtime packages.
 

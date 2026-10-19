@@ -6,9 +6,9 @@ SmoothQuit is a quiet background utility. Its settings should feel like Mac sett
 
 An open orbit and a dot at its closing gap suggest a gentle completion, with a loose Q silhouette. It is not a power symbol, a replica window control or a copy of another app's planet. `Brand.swift` defines the geometry once. The menu bar uses an AppKit template image; icon generation exports the same geometry into the app icon and SVG.
 
-The standard app-icon gradient runs from teal `#17A3A8` to deep blue `#1A4066`, with a white mark. Decorative brand colors do not encode operational state. UI controls use the user's native accent color, not a forced brand tint.
+The app icon uses a native automatic gradient based on teal `#17A3A8`, with a white mark. Decorative brand colors do not encode operational state. UI controls use the user's native accent color, not a forced brand tint.
 
-The shipped icon is a standard `.icns`, not a layered Icon Composer document. Icon Composer first-run license acceptance was not assumed. The SVG remains available as original vector artwork.
+Version 1.3.1 ships a layered Icon Composer document (`Assets/AppIcon.icon`), created and checked in Apple’s tool after license acceptance. The system renders its glass, depth and appearance variants. `actool` compiles both `Assets.car` and the backward-compatible `.icns`; the SVG remains original vector artwork. The older standalone render script can regenerate the shared geometry as SVG.
 
 ## Native interface
 

@@ -25,9 +25,11 @@ APP="$STAGE/SmoothQuit.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$STAGE/icon-work"
 cp "$BIN/SmoothQuit" "$APP/Contents/MacOS/SmoothQuit"
 cp "$PROJECT/Info.plist" "$APP/Contents/Info.plist"
-cat "$PROJECT/Sources/SmoothQuit/Brand.swift" "$PROJECT/scripts/icon.swift" > "$STAGE/icon-work/render.swift"
-xcrun swift "$STAGE/icon-work/render.swift" "$STAGE/icon-work/AppIcon.iconset"
-iconutil -c icns "$STAGE/icon-work/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
+# Icon Composer supplies the system-rendered icon plus an .icns fallback for older macOS.
+xcrun actool "$PROJECT/Assets/AppIcon.icon" --compile "$APP/Contents/Resources" \
+  --platform macosx --target-device mac --minimum-deployment-target 14.0 \
+  --app-icon AppIcon --output-partial-info-plist "$STAGE/icon-work/partial.plist" \
+  > "$OUT/Reports/icon.txt" 2>&1
 rm -rf "$STAGE/icon-work"
 codesign --force --sign - --options runtime --timestamp=none "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP" > "$OUT/Reports/signature.txt" 2>&1

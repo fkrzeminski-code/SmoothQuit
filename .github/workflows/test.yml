@@ -7,4 +7,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: swift test
+      # Hosted runners don't provide the user's interactive Safari/Finder AX session.
+      # Keep these two read-only desktop checks in local runs; do not fake window data.
+      - name: Test logic and native UI
+        run: swift test --skip 'testReadOnlyLiveAppleAXWindows|testRealObserverSubscriptionsOnRunningAppleWindows'

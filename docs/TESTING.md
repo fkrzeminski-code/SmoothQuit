@@ -8,9 +8,9 @@ swift test
 
 The suite covers last-window gating, multiple windows, reopening/cancellation, off-Space identity retention, minimized/hidden and auxiliary windows, rules, invalid AX metadata, event bursts, process-specific event fencing and persisted settings. Interface checks cover settings-window reuse, launch/reopen behavior, menu visibility persistence, stable per-app bindings and light/dark rendering at regular and compact sizes.
 
-Some integration checks read already-running Safari/Finder windows and subscriptions if the test host has Accessibility. They skip when that is unavailable. Two tests can send Quit and are **always skipped unless explicitly enabled**. Counts on CI may therefore differ from the local run.
+Some integration checks read already-running Safari/Finder windows and subscriptions if the test host has Accessibility. They skip when that is unavailable. Two tests can send Quit and are **always skipped unless explicitly enabled**. The GitHub-hosted runner does not provide a usable interactive Safari/Finder AX session even when its trust check returns true. CI explicitly excludes the two read-only desktop checks; local `swift test` retains them. CI therefore runs 44 tests: 42 pass and the 2 Quit tests remain skipped. The initial CI run exposed this environment assumption; production window validation remains strict.
 
-The local 1.3 run on macOS 27.0.1 / Xcode 27.1 passed **44 tests**, with **2 interactive tests skipped**, out of 46. The ordinary suite does not claim to prove real behavior of every app or every Space.
+The local 1.3.1 run on macOS 27.0.1 / Xcode 27.1 passed **44 tests**, with **2 interactive tests skipped**, out of 46. The ordinary suite does not claim to prove real behavior of every app or every Space.
 
 ## Interactive tests (operator opt-in)
 
@@ -44,6 +44,8 @@ Earlier TextEdit success is historical, not a replacement for testing a new pack
 ## Release and manual checks
 
 The release script builds both architectures, checks the Mach-O deployment/SDK metadata, verifies the ad hoc signature and validates the DMG checksum. Inspect `Builds/<version>/Reports/`. Layout renders are test fixtures, not screenshots of private windows. They do not establish animation quality or permission behavior.
+
+Packaged 1.3.1 UI smoke check on 2026-10-19: General and Applications were inspected in the running app. Enable off kept the process alive; menu visibility toggled and was restored; a temporary Bundle-ID rule exposed its per-app delay and was then removed. Closing settings and reopening the app with its menu icon hidden retained the same process. Explicit Quit terminated it. The new ad hoc app reported missing Accessibility, so this check did not claim a new target-app Quit test. Launch at login after relocation still needs checking from the installed copy.
 
 For each packaged release, verify:
 

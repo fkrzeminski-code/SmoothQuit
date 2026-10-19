@@ -40,4 +40,4 @@ swift test
 ./scripts/build.sh
 ```
 
-Kod, dokumentacja, zasoby i buildy mieszczą się w jednym folderze projektu. Wyniki kompilacji trafiają do `Builds/Preview-1.3.0/` i nie są dodawane do Git. Wymagany pełny Xcode; wydanie sprawdzono z Xcode 27.1. Minimalny cel systemowy to macOS 14, bieżąca kontrola wyglądu obejmuje macOS 27.
+Kod, dokumentacja, zasoby i buildy mieszczą się w jednym folderze projektu. Wyniki kompilacji trafiają do `Builds/Preview-1.3.1/` i nie są dodawane do Git. Wymagany pełny Xcode; wydanie sprawdzono z Xcode 27.1. Minimalny cel systemowy to macOS 14, bieżąca kontrola wyglądu obejmuje macOS 27.
