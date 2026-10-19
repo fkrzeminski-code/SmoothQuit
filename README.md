@@ -32,7 +32,7 @@ The app supports **English and Polish** using native macOS localization. It foll
 - **Conservative checks:** existing normal, minimized, hidden, fullscreen, auxiliary and remembered off-Space windows prevent Quit. Ambiguous AX reads also prevent it.
 - **Cancellation:** a new target-app window, disabling SmoothQuit, pausing or changing rules cancels pending work.
 - **Menu bar optional:** hiding the icon leaves the service running. Open SmoothQuit from Finder or Spotlight to return to settings.
-- **Menu bar state feedback:** a brief rotation marks state changes; a dot indicates active monitoring and pause bars indicate inactive monitoring. Reduce Motion disables the transition. There is no repeating animation or idle timer.
+- **Menu bar state feedback:** one centered 360° turn marks state changes; a dot indicates active monitoring and pause bars indicate inactive monitoring. Reduce Motion disables the transition. There is no repeating animation or idle timer.
 - **Separate Enable and Quit:** disabling automation keeps SmoothQuit running. Closing settings only closes the window. **Quit SmoothQuit** exits the utility itself.
 - **Pause and launch at login:** native macOS controls, with no background helper to install.
 - **Session diagnostics:** recent decisions and measured timings, held in memory only.
@@ -64,7 +64,7 @@ swift test
 ./scripts/build.sh
 ```
 
-Output: `Builds/Preview-1.4.0/SmoothQuit.app` and `SmoothQuit.dmg`, with build/test/signature reports and a source snapshot. The script does not install or launch the app. Build products are ignored by Git.
+Output: `Builds/Preview-1.4.1/SmoothQuit.app` and `SmoothQuit.dmg`, with build/test/signature reports and a source snapshot. The script does not install or launch the app. Build products are ignored by Git.
 
 Open `Package.swift` in Xcode to work on the project. SwiftUI and AppKit provide the interface; AXObserver, NSWorkspace and CoreGraphics provide observation. There are no third-party runtime packages.
 

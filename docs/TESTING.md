@@ -8,9 +8,9 @@ swift test
 
 The suite covers last-window gating, multiple windows, reopening/cancellation, off-Space identity retention, minimized/hidden and auxiliary windows, rules, invalid AX metadata, event bursts, process-specific event fencing and persisted settings. Interface checks cover settings-window reuse, launch/reopen behavior, menu visibility persistence, stable per-app bindings and light/dark rendering at regular and compact sizes.
 
-Some integration checks read already-running Safari/Finder windows and subscriptions if the test host has Accessibility. They skip when that is unavailable. Two tests can send Quit and are **always skipped unless explicitly enabled**. The GitHub-hosted runner does not provide a usable interactive Safari/Finder AX session even when its trust check returns true. CI explicitly excludes the two read-only desktop checks; local `swift test` retains them. CI therefore runs 47 tests: 45 pass and the 2 Quit tests remain skipped. The initial CI run exposed this environment assumption; production window validation remains strict.
+Some integration checks read already-running Safari/Finder windows and subscriptions if the test host has Accessibility. They skip when that is unavailable. Two tests can send Quit and are **always skipped unless explicitly enabled**. The GitHub-hosted runner does not provide a usable interactive Safari/Finder AX session even when its trust check returns true. CI explicitly excludes the two read-only desktop checks; local `swift test` retains them. CI therefore runs 48 tests: 45 pass and the 2 Quit tests plus the live compositor test remain skipped. The initial CI run exposed this environment assumption; production window validation remains strict.
 
-The local 1.4.0 run on macOS 27.0.1 / Xcode 27.1 passed **47 tests**, with **2 interactive tests skipped**, out of 49. The ordinary suite does not claim to prove real behavior of every app or every Space.
+The local 1.4.1 run on macOS 27.0.1 / Xcode 27.1 passed **47 tests**, with **3 interactive tests skipped**, out of 50. The ordinary suite does not claim to prove real behavior of every app or every Space.
 
 ## Interactive tests (operator opt-in)
 
@@ -70,3 +70,17 @@ For each packaged release, verify:
 - Launch at login from the installed path, including after relocation.
 
 The complete live matrix across multiple displays, Spaces, fullscreen, unsaved documents, older macOS releases and Intel hardware has **not** been executed. Do not label those cases verified solely because the logical tests pass.
+
+## Menu animation regression — 1.4.1
+
+The previous check only verified animation presence and missed the visual defect. The old component was measured in a real native menu bar: its center moved by **3.4371 pt**, with an offset-and-return movement rather than a full turn.
+
+The corrected production component was then tested in a native menu item and a magnified preview. Normal enable and disable completed **+360° / −360°**, with **0.0000 pt measured center drift**. Rapid state changes preserved a single continuous turn. The visual preview was also inspected at 5× slower playback; release timing is 0.6 s.
+
+The opt-in regression test samples the actual Core Animation presentation layer, checks direction, full travel, center stability and completion. It passed for both directions and rapid changes (86–87 samples per case). It needs an unlocked Mac desktop, adds only its own temporary status item, and does not access other apps or require Accessibility:
+
+```sh
+SMOOTHQUIT_LIVE_ICON=1 swift test --filter InterfaceTests/testLiveMenuIconCompletesTurnsWithoutMovingOrReversing
+```
+
+The regular test verifies Reduce Motion, no initial animation, state artwork and rapid-change coalescing. No window-observation or Quit engine code changed in 1.4.1; Calendar results above belong to 1.4.0.

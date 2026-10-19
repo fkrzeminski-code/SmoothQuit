@@ -2,6 +2,7 @@ import XCTest
 import AppKit
 import SwiftUI
 import CoreServices
+import QuartzCore
 import SmoothQuitCore
 @testable import SmoothQuit
 
@@ -39,9 +40,65 @@ final class InterfaceTests: XCTestCase {
         XCTAssertNil(icon.layer?.animation(forKey: "stateChange"))
         XCTAssertNil(icon.hitTest(.zero)) // The native status button still receives clicks.
         icon.update(active: true, animated: true, reduceMotion: false)
-        XCTAssertNotNil(icon.layer?.animation(forKey: "stateChange"))
-        icon.update(active: false, animated: true, reduceMotion: true)
+        let turn = try XCTUnwrap(icon.layer?.animation(forKey: "stateChange") as? CABasicAnimation)
+        XCTAssertEqual(turn.fromValue as? Double, 0)
+        XCTAssertEqual(try XCTUnwrap(turn.toValue as? Double), 2 * .pi, accuracy: 0.0001)
+        XCTAssertEqual(icon.layer?.anchorPoint, CGPoint(x: 0.5, y: 0.5))
+        XCTAssertEqual(icon.layer?.position, CGPoint(x: icon.frame.midX, y: icon.frame.midY))
+        let startedAt = turn.beginTime
+        icon.update(active: false, animated: true, reduceMotion: false)
+        let continuing = try XCTUnwrap(icon.layer?.animation(forKey: "stateChange") as? CABasicAnimation)
+        XCTAssertEqual(continuing.toValue as? Double, turn.toValue as? Double)
+        XCTAssertEqual(continuing.beginTime, startedAt)
+        XCTAssertFalse(icon.active!) // Immediate state feedback without reversing the turn.
+        icon.update(active: true, animated: true, reduceMotion: true)
         XCTAssertNil(icon.layer?.animation(forKey: "stateChange"))
+    }
+    /// Opt-in compositor check: uses a real native menu bar item, no AX or other apps.
+    @MainActor func testLiveMenuIconCompletesTurnsWithoutMovingOrReversing() throws {
+        guard ProcessInfo.processInfo.environment["SMOOTHQUIT_LIVE_ICON"] == "1" else {
+            throw XCTSkip("Requires an unlocked interactive desktop for real compositor measurements")
+        }
+        _ = NSApplication.shared
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        defer { NSStatusBar.system.removeStatusItem(item) }
+        let button = try XCTUnwrap(item.button)
+        let icon = StatusIconView(frame: NSRect(x: (button.bounds.width-18)/2, y: (button.bounds.height-18)/2, width: 18, height: 18))
+        button.addSubview(icon)
+        icon.update(active: false, animated: false)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        for (active, rapid) in [(true, false), (false, false), (true, true)] {
+            icon.update(active: active, animated: true, reduceMotion: false)
+            CATransaction.flush()
+            let start = CACurrentMediaTime()
+            let expected = CGPoint(x: icon.frame.midX, y: icon.frame.midY)
+            var previous = 0.0, travel = 0.0, maxDrift = 0.0
+            var samples = 0, changed = false
+            while CACurrentMediaTime()-start < 0.85 {
+                if rapid, !changed, CACurrentMediaTime()-start > 0.15 {
+                    icon.update(active: !active, animated: true, reduceMotion: false)
+                    icon.update(active: active, animated: true, reduceMotion: false)
+                    changed = true
+                }
+                if let layer = icon.layer?.presentation() {
+                    let transform = CATransform3DGetAffineTransform(layer.transform)
+                    let angle = atan2(transform.b, transform.a)
+                    var delta = angle-previous
+                    if delta < -.pi { delta += 2 * .pi }
+                    if delta > .pi { delta -= 2 * .pi }
+                    XCTAssertGreaterThanOrEqual((active ? 1 : -1) * delta, -0.01, "Rotation reversed")
+                    travel += delta; previous = angle; samples += 1
+                    let offset = CGPoint(x: layer.bounds.width*(0.5-layer.anchorPoint.x), y: layer.bounds.height*(0.5-layer.anchorPoint.y)).applying(transform)
+                    maxDrift = max(maxDrift, hypot(layer.position.x+offset.x-expected.x, layer.position.y+offset.y-expected.y))
+                }
+                RunLoop.main.run(until: Date().addingTimeInterval(1.0/120))
+            }
+            XCTAssertGreaterThan(samples, 20)
+            XCTAssertEqual(travel, (active ? 1 : -1) * 2 * .pi, accuracy: 0.02)
+            XCTAssertLessThan(maxDrift, 0.05, "The icon must rotate around its center")
+            XCTAssertNil(icon.layer?.animation(forKey: "stateChange"))
+            print("Live menu turn: active=\(active), rapid=\(rapid), radians=\(travel), centerDrift=\(maxDrift), samples=\(samples)")
+        }
     }
     func testEnglishAndPolishResourcesAndDiagnosticFormats() throws {
         let bundle = Localization.bundle
