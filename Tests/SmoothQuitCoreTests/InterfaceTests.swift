@@ -1,0 +1,144 @@
+import XCTest
+import AppKit
+import SwiftUI
+import CoreServices
+import SmoothQuitCore
+@testable import SmoothQuit
+
+final class InterfaceTests: XCTestCase {
+    func testBrandUsesTemplateImageForSystemMenuBarAppearance() throws {
+        let image = Brand.image()
+        XCTAssertTrue(image.isTemplate)
+        XCTAssertEqual(image.size, NSSize(width: 18, height: 18))
+        XCTAssertNotNil(image.tiffRepresentation)
+        XCTAssertFalse(Brand.orbit.boundingBoxOfPath.isEmpty)
+    }
+    @MainActor func testMenuBarPreferencePreservesExistingAutomationAndPersists() throws {
+        let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var legacy = Preferences()
+        legacy.delay = 1.25; legacy.rules = [AppRule(id: "com.apple.TextEdit", name: "TextEdit")]
+        defaults.set(try JSONEncoder().encode(legacy), forKey: "preferences.v1")
+        let model = AppModel(defaults: defaults)
+        XCTAssertTrue(model.showInMenuBar)
+        model.showInMenuBar = false
+        XCTAssertEqual(model.preferences, legacy)
+        let reloaded = AppModel(defaults: defaults)
+        XCTAssertFalse(reloaded.showInMenuBar)
+        XCTAssertEqual(reloaded.preferences, legacy)
+        reloaded.preferences.enabled = false
+        XCTAssertFalse(reloaded.showInMenuBar)
+        reloaded.showInMenuBar = true
+        XCTAssertFalse(reloaded.preferences.enabled)
+    }
+    @MainActor func testClosingSettingsKeepsModelAndReusesSameWindow() throws {
+        let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
+        model.showInMenuBar = false
+        let delegate = AppDelegate(model: model)
+        let window = delegate.makeSettingsWindow()
+        window.performClose(nil)
+        XCTAssertFalse(window.isVisible)
+        XCTAssertFalse(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApplication.shared))
+        XCTAssertTrue(model.preferences.enabled)
+        XCTAssertFalse(model.showInMenuBar)
+        XCTAssertTrue(delegate.makeSettingsWindow() === window)
+        window.contentViewController = nil
+    }
+    func testManualLaunchShowsSettingsButLoginDoesNot() {
+        XCTAssertTrue(AppDelegate.shouldShowSettings(onLaunch: nil))
+        let event = NSAppleEventDescriptor(eventClass: kCoreEventClass, eventID: kAEOpenApplication,
+                                          targetDescriptor: nil, returnID: AEReturnID(kAutoGenerateReturnID),
+                                          transactionID: AETransactionID(kAnyTransactionID))
+        XCTAssertTrue(AppDelegate.shouldShowSettings(onLaunch: event))
+        event.setParam(NSAppleEventDescriptor(enumCode: keyAELaunchedAsLogInItem), forKeyword: keyAEPropData)
+        XCTAssertFalse(AppDelegate.shouldShowSettings(onLaunch: event))
+    }
+    @MainActor func testNativeSettingsTabsRestoreSelection() throws {
+        let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(2, forKey: "selectedPane")
+        let tabs = SettingsTabs(model: AppModel(defaults: defaults), defaults: defaults)
+        XCTAssertEqual(tabs.tabStyle, .toolbar)
+        XCTAssertEqual(tabs.selectedTabViewItemIndex, 2)
+        _ = tabs.view
+        tabs.selectedTabViewItemIndex = 1
+        XCTAssertEqual(defaults.integer(forKey: "selectedPane"), 1)
+        XCTAssertEqual(tabs.tabViewItems.count, 3)
+    }
+    @MainActor func testSelectedRuleBindingSurvivesRemovalAndIndexChange() throws {
+        let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
+        model.add(id: "com.apple.TextEdit")
+        model.add(id: "com.apple.Safari")
+        let first = model.binding(for: model.preferences.rules[0])
+        let last = model.binding(for: model.preferences.rules[1])
+        model.preferences.rules.removeFirst()
+        last.wrappedValue.delay = 1.5
+        XCTAssertEqual(model.preferences.rules[0].delay, 1.5)
+        first.wrappedValue.behavior = .never
+        XCTAssertEqual(model.preferences.rules[0].behavior, .mode)
+        model.preferences.rules.removeAll()
+        XCTAssertNil(first.wrappedValue.delay)
+        last.wrappedValue.delay = 2
+        XCTAssertTrue(model.preferences.rules.isEmpty)
+    }
+    @MainActor func testPreferencesPersistWithoutStartingMonitor() throws {
+        let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
+        model.add(id: "com.apple.TextEdit", name: "TextEdit")
+        model.preferences.delay = 1.25
+        let reloaded = AppModel(defaults: defaults)
+        XCTAssertEqual(reloaded.preferences, model.preferences)
+        defaults.set(Data("broken".utf8), forKey: "preferences.v1")
+        let repaired = AppModel(defaults: defaults)
+        XCTAssertEqual(repaired.preferences, Preferences())
+        XCTAssertNotNil(repaired.error)
+    }
+    @MainActor func testSettingsRenderLightAndDarkWithoutLaunchingApp() throws {
+        let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
+        model.add(id: "com.apple.TextEdit", name: "TextEdit")
+        model.add(id: "com.apple.Safari", name: "Safari")
+        model.diagnostics = [Diagnostic(bundleID: "com.apple.TextEdit", message: "Przykładowy podgląd: normalne okno zamknięte; weryfikacja po 0,50 s")]
+        model.trusted = true // Deterministic fixture, not a permission grant.
+        model.loginEnabled = false
+        let output = ProcessInfo.processInfo.environment["SMOOTHQUIT_SNAPSHOT_DIR"]
+        for size in [NSSize(width: 680, height: 700), NSSize(width: 640, height: 540)] {
+        for dark in [false, true] {
+            for pane in 0...2 {
+                defaults.set(pane, forKey: "selectedPane")
+                let view = SettingsView(model: model, pane: pane).defaultAppStorage(defaults).environment(\.colorScheme, dark ? .dark : .light)
+                let hosting = NSHostingView(rootView: view)
+                hosting.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+                hosting.frame = NSRect(origin: .zero, size: size)
+                let window = NSWindow(contentRect: hosting.frame, styleMask: [.titled], backing: .buffered, defer: false)
+                window.contentView = hosting
+                // Offscreen: never orderFront, activate, start Monitor, or launch SmoothQuit.app.
+                hosting.layoutSubtreeIfNeeded()
+                RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+                XCTAssertGreaterThan(hosting.fittingSize.width, 0)
+                let bitmap = try XCTUnwrap(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+                hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+                let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+                XCTAssertGreaterThan(png.count, 5000)
+                if let output {
+                    try FileManager.default.createDirectory(atPath: output, withIntermediateDirectories: true)
+                    try png.write(to: URL(fileURLWithPath: output).appendingPathComponent("settings-\(pane)-\(dark ? "dark" : "light")-\(Int(size.width)).png"))
+                }
+                window.contentView = nil
+            }
+        }
+        }
+    }
+}
