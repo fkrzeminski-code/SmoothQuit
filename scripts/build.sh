@@ -25,6 +25,7 @@ APP="$STAGE/SmoothQuit.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$STAGE/icon-work"
 cp "$BIN/SmoothQuit" "$APP/Contents/MacOS/SmoothQuit"
 cp "$PROJECT/Info.plist" "$APP/Contents/Info.plist"
+ditto "$BIN/SmoothQuit_SmoothQuit.bundle" "$APP/Contents/Resources/SmoothQuit_SmoothQuit.bundle"
 # Icon Composer supplies the system-rendered icon plus an .icns fallback for older macOS.
 xcrun actool "$PROJECT/Assets/AppIcon.icon" --compile "$APP/Contents/Resources" \
   --platform macosx --target-device mac --minimum-deployment-target 14.0 \

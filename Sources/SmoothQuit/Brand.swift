@@ -17,10 +17,21 @@ enum Brand {
         context.addPath(orbit); context.addPath(dot); context.fillPath()
         context.restoreGState()
     }
-    static func image(size: CGFloat = 18) -> NSImage {
+    static func image(size: CGFloat = 18, active: Bool = true) -> NSImage {
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
-            draw(in: context, size: rect.width, color: .black)
+            context.saveGState()
+            context.scaleBy(x: rect.width / 100, y: rect.height / 100)
+            context.setFillColor(NSColor.black.cgColor)
+            context.addPath(orbit)
+            if active { context.addPath(dot) }
+            else {
+                // Pause bars replace the dot: state is readable without color or motion.
+                context.addRect(CGRect(x: 65, y: 20, width: 5, height: 15))
+                context.addRect(CGRect(x: 74, y: 20, width: 5, height: 15))
+            }
+            context.fillPath()
+            context.restoreGState()
             return true
         }
         image.isTemplate = true

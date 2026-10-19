@@ -12,7 +12,7 @@ final class SettingsTabs: NSTabViewController {
         super.init(nibName: nil, bundle: nil)
         tabStyle = .toolbar
         transitionOptions = [] // Native controls supply feedback; no extra motion to disable.
-        for (index, pane) in [("Ogólne", "slider.horizontal.3"), ("Aplikacje", "square.grid.2x2"), ("Aktywność", "clock.arrow.circlepath")].enumerated() {
+        for (index, pane) in [(L("General"), "slider.horizontal.3"), (L("Applications"), "square.grid.2x2"), (L("Activity"), "clock.arrow.circlepath")].enumerated() {
             let host = NSHostingController(rootView: SettingsView(model: model, pane: index))
             host.title = pane.0
             let item = NSTabViewItem(viewController: host)
@@ -55,11 +55,11 @@ struct SettingsView: View {
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             HStack {
-                Text("Zmiany są zapisywane automatycznie.")
+                Text(L("Changes are saved automatically."))
                     .font(.callout).foregroundStyle(.secondary)
                 Spacer()
-                Button("Quit SmoothQuit") { NSApp.terminate(nil) }
-                    .help("Kończy cały program i wyłącza obserwację aplikacji.")
+                Button(L("Quit SmoothQuit")) { NSApp.terminate(nil) }
+                    .help(L("Quits SmoothQuit and stops observing apps."))
             }.padding(.horizontal, 20).padding(.vertical, 10)
         }
         .frame(minWidth: 640, minHeight: 540)
@@ -76,94 +76,94 @@ struct SettingsView: View {
                         Image(nsImage: Brand.image(size: 36))
                             .foregroundStyle(.tint).accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Enable SmoothQuit").fontWeight(.medium)
+                            Text(L("Enable SmoothQuit")).fontWeight(.medium)
                             Text(model.status).font(.callout).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }.toggleStyle(.switch)
-                    .accessibilityLabel("Enable SmoothQuit")
-                    .help("Wyłączenie anuluje oczekujące Quit. SmoothQuit pozostaje uruchomiony.")
+                    .accessibilityLabel(L("Enable SmoothQuit"))
+                    .help(L("Disabling cancels pending Quit requests. SmoothQuit keeps running."))
             }
             if !model.trusted { permissions }
             Section {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .center) {
-                        Text("Opóźnienie zamknięcia")
+                        Text(L("Quit delay"))
                         Spacer()
                         (Text(model.preferences.delay, format: .number.precision(.fractionLength(2))) + Text(" s"))
                             .font(.body.monospacedDigit()).foregroundStyle(.secondary)
                     }
                     Slider(value: $model.preferences.delay, in: 0.2...2, step: 0.05) {
-                        Text("Opóźnienie Quit")
-                    } minimumValueLabel: { Text("0,2 s") } maximumValueLabel: { Text("2 s") }
-                    .labelsHidden().accessibilityLabel("Opóźnienie Quit")
-                    Text("Po zamknięciu ostatniego okna. Nowe okno anuluje odliczanie, a animacją zarządza macOS.")
+                        Text(L("Quit delay"))
+                    } minimumValueLabel: { Text(L("0.2 s")) } maximumValueLabel: { Text("2 s") }
+                    .labelsHidden().accessibilityLabel(L("Quit delay"))
+                    Text(L("After the last window closes. A new window cancels the countdown; macOS handles the animation."))
                         .font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }.padding(.vertical, 4)
-            } header: { Text("Zamykanie aplikacji") }
+            } header: { Text(L("Closing apps")) }
             Section {
                 HStack {
-                    Label("Pauza automatycznego Quit", systemImage: "pause.circle")
+                    Label(L("Pause automatic Quit"), systemImage: "pause.circle")
                     Spacer()
                     if model.preferences.isPaused, let until = model.preferences.pauseUntil {
-                        Text("Do \(until.formatted(date: .omitted, time: .shortened))").foregroundStyle(.secondary)
-                        Button("Wznów teraz") { model.pause(minutes: nil) }
+                        Text(L("Until %@", until.formatted(date: .omitted, time: .shortened))).foregroundStyle(.secondary)
+                        Button(L("Resume now")) { model.pause(minutes: nil) }
                     } else {
-                        Menu("Wstrzymaj…") {
+                        Menu(L("Pause…")) {
                             ForEach([5, 15, 30, 60], id: \.self) { minutes in
-                                Button("\(minutes) minut") { model.pause(minutes: minutes) }
+                                Button(L("%d minutes", minutes)) { model.pause(minutes: minutes) }
                             }
                         }.fixedSize()
                     }
                 }
-                DisclosureGroup("Okna ukryte i zminimalizowane") {
-                    Toggle("Monitoruj ukryte aplikacje", isOn: $model.preferences.monitorHidden)
-                    Toggle("Monitoruj przy zminimalizowanych oknach", isOn: $model.preferences.monitorMinimized)
-                    Text("Każde istniejące okno, także na innym Space, zawsze blokuje Quit. Wyłączenie tych opcji dodatkowo wstrzymuje obsługę danego stanu.")
+                DisclosureGroup(L("Hidden and minimized windows")) {
+                    Toggle(L("Monitor hidden apps"), isOn: $model.preferences.monitorHidden)
+                    Toggle(L("Monitor apps with minimized windows"), isOn: $model.preferences.monitorMinimized)
+                    Text(L("Any existing window, including one on another Space, always prevents Quit. Turning these options off also suspends monitoring in that state."))
                         .font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-            } header: { Text("Kontrola działania") }
+            } header: { Text(L("Automation")) }
             Section {
                 Toggle(isOn: $model.showInMenuBar) {
-                    preferenceLabel("Show in Menu Bar", symbol: "menubar.rectangle",
-                                    caption: "Po ukryciu ikony wrócisz do ustawień przez Spotlight lub Finder.")
+                    preferenceLabel(L("Show in Menu Bar"), symbol: "menubar.rectangle",
+                                    caption: L("Open SmoothQuit from Spotlight or Finder to return to settings when the icon is hidden."))
                 }.toggleStyle(.switch).controlSize(.small)
-                    .accessibilityLabel("Show in Menu Bar")
-                    .accessibilityHint("Ukrycie ikony nie wyłącza SmoothQuit. Wrócisz do ustawień przez Spotlight lub Finder.")
-                    .help("Ukrycie ikony nie wyłącza SmoothQuit.")
+                    .accessibilityLabel(L("Show in Menu Bar"))
+                    .accessibilityHint(L("Hiding the icon keeps SmoothQuit running. Return to settings through Spotlight or Finder."))
+                    .help(L("Hiding the icon keeps SmoothQuit running."))
                 Toggle(isOn: Binding(get: { model.loginEnabled }, set: model.setLogin)) {
-                    preferenceLabel("Uruchamiaj przy logowaniu", symbol: "arrow.right.to.line",
-                                    caption: "SmoothQuit rozpocznie pracę w tle po zalogowaniu do Maca.")
+                    preferenceLabel(L("Launch at login"), symbol: "arrow.right.to.line",
+                                    caption: L("SmoothQuit starts in the background when you log in to your Mac."))
                 }.toggleStyle(.switch).controlSize(.small)
-                    .accessibilityLabel("Uruchamiaj przy logowaniu")
-                    .accessibilityHint("SmoothQuit rozpocznie pracę w tle po zalogowaniu do Maca.")
+                    .accessibilityLabel(L("Launch at login"))
+                    .accessibilityHint(L("SmoothQuit starts in the background when you log in to your Mac."))
                 if model.loginNeedsApproval {
-                    Button("Zatwierdź autostart w Ustawieniach systemowych…") { SMAppService.openSystemSettingsLoginItems() }
+                    Button(L("Approve login item in System Settings…")) { SMAppService.openSystemSettingsLoginItems() }
                 }
-            } header: { Text("Widoczność i uruchamianie") }
+            } header: { Text(L("Visibility and startup")) }
             if model.trusted { permissions }
         }.formStyle(.grouped)
     }
     private var permissions: some View {
         Section {
             HStack(alignment: .top, spacing: 16) {
-                preferenceLabel(model.trusted ? "Dostępność przyznana" : "Wymagana Dostępność",
+                preferenceLabel(model.trusted ? L("Accessibility granted") : L("Accessibility required"),
                                 symbol: model.trusted ? "checkmark.shield" : "lock.shield",
-                                caption: "Pozwala sprawdzać, czy aplikacja ma otwarte okna.")
+                                caption: L("Allows SmoothQuit to check whether apps have open windows."))
                 Spacer(minLength: 0)
                 HStack(spacing: 8) {
                     if !model.trusted {
-                        Button("Nadaj dostęp…") { model.requestAccessibility() }.buttonStyle(.borderedProminent)
+                        Button(L("Grant access…")) { model.requestAccessibility() }.buttonStyle(.borderedProminent)
                     }
                     if model.trusted {
-                        Button("Sprawdź ponownie") { model.refresh() }
+                        Button(L("Check again")) { model.refresh() }
                     }
                 }.fixedSize()
             }.padding(.vertical, 3)
-        } header: { Text("Uprawnienia") }
+        } header: { Text(L("Permissions")) }
     }
     // Native labels keep captions attached to the setting they explain.
     private func preferenceLabel(_ title: String, symbol: String, caption: String) -> some View {
@@ -188,13 +188,13 @@ struct RulesView: View {
     var body: some View {
         Form {
             Section {
-                Picker("Tryb", selection: $model.preferences.mode) {
-                    Text("Include — tylko z listy").tag(SelectionMode.include)
-                    Text("Exclude — poza listą").tag(SelectionMode.exclude)
+                Picker(L("Mode"), selection: $model.preferences.mode) {
+                    Text(L("Include — selected apps only")).tag(SelectionMode.include)
+                    Text(L("Exclude — all except listed")).tag(SelectionMode.exclude)
                 }.pickerStyle(.segmented)
-                Text(model.preferences.mode == .include ? "Bezpieczny start: dodaj jedną aplikację i sprawdź jej działanie." : "W tym trybie pozostałe zwykłe aplikacje mogą być zamykane. Dodaj wyjątki do listy.")
+                Text(model.preferences.mode == .include ? L("Start safely: add one app and test how it behaves.") : L("Other regular apps may quit automatically in this mode. Add exceptions to the list."))
                     .font(.callout).foregroundStyle(.secondary)
-            } header: { Text("Tryb działania") }
+            } header: { Text(L("Selection mode")) }
             Section {
                 List(selection: $selection) {
                     ForEach(model.preferences.rules) { rule in
@@ -205,7 +205,7 @@ struct RulesView: View {
                                 Text(rule.id).font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Text(rule.behavior == .mode ? "Zgodnie z trybem" : rule.behavior == .allow ? "Zawsze" : "Nigdy")
+                            Text(rule.behavior == .mode ? L("Follow mode") : rule.behavior == .allow ? L("Always") : L("Never"))
                                 .font(.callout).foregroundStyle(.secondary)
                         }.padding(.vertical, 3).tag(rule.id)
                     }
@@ -213,49 +213,49 @@ struct RulesView: View {
                     if model.preferences.rules.isEmpty {
                         VStack(spacing: 8) {
                             Image(systemName: "app.badge").font(.largeTitle)
-                            Text(model.preferences.mode == .include ? "Dodaj pierwszą aplikację" : "Brak wyjątków").font(.headline)
-                            Text(model.preferences.mode == .include ? "W trybie Include pusta lista nie zamyka żadnej aplikacji." : "Dodaj aplikacje, które mają pozostać uruchomione.").foregroundStyle(.secondary)
+                            Text(model.preferences.mode == .include ? L("Add your first app") : L("No exceptions")).font(.headline)
+                            Text(model.preferences.mode == .include ? L("An empty Include list never quits any apps.") : L("Add apps you want to keep running.")).foregroundStyle(.secondary)
                         }.allowsHitTesting(false)
                     }
                 }.frame(height: 200).listStyle(.inset).scrollContentBackground(.hidden)
                 HStack {
-                    Button("Usuń", systemImage: "minus") {
+                    Button(L("Remove"), systemImage: "minus") {
                         model.preferences.rules.removeAll { $0.id == selection }; selection = nil
                     }.disabled(selection == nil)
                     Spacer()
-                    Button("Dodaj aplikację…", systemImage: "plus") { showPicker = true }
+                    Button(L("Add app…"), systemImage: "plus") { showPicker = true }
                 }
-            } header: { Text(model.preferences.mode == .include ? "Wybrane aplikacje" : "Wyjątki") }
+            } header: { Text(model.preferences.mode == .include ? L("Selected apps") : L("Exceptions")) }
             Section {
-                DisclosureGroup("Dodaj przez Bundle ID") {
+                DisclosureGroup(L("Add by Bundle ID")) {
                     HStack {
-                        TextField("Bundle ID, np. com.apple.TextEdit", text: $bundleID).textFieldStyle(.roundedBorder)
+                        TextField(L("Bundle ID, e.g. com.apple.TextEdit"), text: $bundleID).textFieldStyle(.roundedBorder)
                             .onSubmit(addBundle)
-                        Button("Dodaj ID", action: addBundle).disabled(bundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Button(L("Add ID"), action: addBundle).disabled(bundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }.padding(.top, 6)
                 }
             }
             if let selection, let rule = model.preferences.rules.first(where: { $0.id == selection }) {
                 let binding = model.binding(for: rule)
                 Section {
-                    Picker("Automatyczne Quit", selection: binding.behavior) {
-                        Text("Zgodnie z trybem").tag(RuleBehavior.mode)
-                        Text("Zawsze zezwalaj").tag(RuleBehavior.allow)
-                        Text("Nigdy nie zamykaj").tag(RuleBehavior.never)
+                    Picker(L("Automatic Quit"), selection: binding.behavior) {
+                        Text(L("Follow mode")).tag(RuleBehavior.mode)
+                        Text(L("Always allow")).tag(RuleBehavior.allow)
+                        Text(L("Never quit")).tag(RuleBehavior.never)
                     }
-                    Toggle("Własne opóźnienie", isOn: Binding(get: { binding.wrappedValue.delay != nil }, set: {
+                    Toggle(L("Custom delay"), isOn: Binding(get: { binding.wrappedValue.delay != nil }, set: {
                         binding.wrappedValue.delay = $0 ? model.preferences.delay : nil
                     }))
                     if let delay = binding.wrappedValue.delay {
                         HStack {
-                            Slider(value: Binding(get: { binding.wrappedValue.delay ?? 0.5 }, set: { binding.wrappedValue.delay = $0 }), in: 0.2...2, step: 0.05) { Text("Opóźnienie dla aplikacji") }
+                            Slider(value: Binding(get: { binding.wrappedValue.delay ?? 0.5 }, set: { binding.wrappedValue.delay = $0 }), in: 0.2...2, step: 0.05) { Text(L("App-specific delay")) }
                             Text(String(format: "%.2f s", delay)).monospacedDigit().frame(width: 60)
                         }
                     }
                     if selection == "com.apple.finder" {
-                        Text("Finder jest domyślnie chroniony. Tylko jawna reguła „Zawsze zezwalaj” umożliwia jego zamykanie.").font(.callout).foregroundStyle(.secondary)
+                        Text(L("Finder is protected by default. Only an explicit Always allow rule enables automatic Quit.")).font(.callout).foregroundStyle(.secondary)
                     }
-                } header: { Text("Reguła: \(rule.name)") }
+                } header: { Text(L("Rule: %@", rule.name)) }
             }
         }.formStyle(.grouped)
         .sheet(isPresented: $showPicker) { AppPicker(model: model) }
@@ -270,9 +270,9 @@ struct AppPicker: View {
     @State private var selected = Set<String>()
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Zainstalowane aplikacje").font(.title2.bold())
-            TextField("Szukaj po nazwie lub Bundle ID", text: $query).textFieldStyle(.roundedBorder)
-            if model.loadingApps { ProgressView("Wczytywanie aplikacji…") }
+            Text(L("Installed apps")).font(.title2.bold())
+            TextField(L("Search by name or Bundle ID"), text: $query).textFieldStyle(.roundedBorder)
+            if model.loadingApps { ProgressView(L("Loading apps…")) }
             List(model.installed.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.id.localizedCaseInsensitiveContains(query) }, selection: $selected) { app in
                 HStack {
                     Image(nsImage: model.icon(for: app.id)).resizable().frame(width: 28, height: 28).accessibilityHidden(true)
@@ -280,10 +280,10 @@ struct AppPicker: View {
                 }.tag(app.id)
             }
             HStack {
-                Button("Wybierz plik .app…") { chooseFile() }
+                Button(L("Choose .app file…")) { chooseFile() }
                 Spacer()
-                Button("Anuluj") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Dodaj zaznaczone") {
+                Button(L("Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(L("Add selected")) {
                     for app in model.installed where selected.contains(app.id) { model.add(id: app.id, name: app.name) }
                     dismiss()
                 }.keyboardShortcut(.defaultAction).disabled(selected.isEmpty)
@@ -313,14 +313,14 @@ struct ActivityView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Picker("Widok", selection: $historyOnly) {
-                    Text("Diagnostyka").tag(false); Text("Historia Quit").tag(true)
+                Picker(L("View"), selection: $historyOnly) {
+                    Text(L("Diagnostics")).tag(false); Text(L("Quit history")).tag(true)
                 }.pickerStyle(.segmented).frame(maxWidth: 260)
                 Spacer()
-                Button("Odśwież obserwację") { model.refresh() }
-                Button("Wyczyść") { model.diagnostics.removeAll() }.disabled(model.diagnostics.isEmpty)
+                Button(L("Refresh monitoring")) { model.refresh() }
+                Button(L("Clear")) { model.diagnostics.removeAll() }.disabled(model.diagnostics.isEmpty)
             }
-            Text("Ostatnie 200 zdarzeń, wyłącznie w pamięci tej sesji. Brak tytułów okien i treści dokumentów.")
+            Text(L("The last 200 events, held only in memory for this session. No window titles or document contents."))
                 .font(.callout).foregroundStyle(.secondary)
             List(entries) { entry in
                 HStack(alignment: .top, spacing: 10) {
@@ -333,7 +333,7 @@ struct ActivityView: View {
                         }
                         Text(entry.message).textSelection(.enabled)
                         if let elapsed = entry.elapsed {
-                            Text(String(format: "Zmierzony czas: %.3f s", elapsed)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                            Text(L("Measured time: %.3f s", elapsed)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                         }
                     }
                 }.padding(.vertical, 5)
@@ -342,13 +342,13 @@ struct ActivityView: View {
                     VStack(spacing: 8) {
                         Image(systemName: historyOnly ? "clock.arrow.circlepath" : "waveform.path").font(.title)
                             .accessibilityHidden(true)
-                        Text(historyOnly ? "Brak automatycznych zamknięć" : "Brak zdarzeń").font(.headline)
-                        Text(historyOnly ? "Historia pojawi się po pierwszym żądaniu Quit w tej sesji." : "Zdarzenia pojawią się po włączeniu obserwacji wybranej aplikacji.")
+                        Text(historyOnly ? L("No automatic quits yet") : L("No events yet")).font(.headline)
+                        Text(historyOnly ? L("History appears after the first Quit request in this session.") : L("Events appear when monitoring is enabled for a selected app."))
                             .foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }.padding().allowsHitTesting(false)
                 }
             }
-            Text("„Wysłano Quit” nie oznacza zakończenia procesu. Aplikacja może poprosić o zapis lub odmówić. SmoothQuit nie ponawia żądania i nigdy nie wymusza zamknięcia.")
+            Text(L("A Quit request does not mean the process has exited. An app may ask you to save or refuse to quit. SmoothQuit never repeats the request or force-quits."))
                 .font(.callout).foregroundStyle(.secondary)
         }.padding(20)
     }

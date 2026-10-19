@@ -12,10 +12,10 @@ SmoothQuit is a small, native macOS menu bar utility that asks an app to quit af
 1. Download `SmoothQuit.dmg` from [Releases](https://github.com/fkrzeminski-code/SmoothQuit/releases). Choose the newest preview; the universal app contains Apple Silicon and Intel code.
 2. Open the DMG and drag **SmoothQuit** into **Applications**. Quit an older running copy before replacing it. Run from Applications, not the mounted DMG, if you want launch at login.
 3. In **System Settings → Privacy & Security → Accessibility**, add and enable SmoothQuit. This is its only required permission. If macOS blocks a trusted download, use its normal **Open Anyway** flow if offered; do not disable Gatekeeper or SIP.
-4. In **Aplikacje** (Applications), start with **Include** and add one app with an empty or disposable document. A fresh installation starts with an empty Include list, so it closes nothing until you select an app.
+4. In **Applications**, start with **Include** and add one app with an empty or disposable document. A fresh installation starts with an empty Include list, so it closes nothing until you select an app.
 5. Turn on **Enable SmoothQuit**. The default delay is **0.5 seconds**.
 
-The interface is currently primarily Polish, with English labels for Enable and Show in Menu Bar. [Polish instructions](docs/README.pl.md) map the settings directly.
+The app supports **English and Polish** using native macOS localization. It follows your preferred language. To choose English just for SmoothQuit, open **System Settings → General → Language & Region → Applications**, add SmoothQuit and select English, then reopen it. The main README is maintained in English; [Polish installation instructions](docs/README.pl.md) are also available.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/settings-dark.png">
@@ -32,6 +32,7 @@ The interface is currently primarily Polish, with English labels for Enable and 
 - **Conservative checks:** existing normal, minimized, hidden, fullscreen, auxiliary and remembered off-Space windows prevent Quit. Ambiguous AX reads also prevent it.
 - **Cancellation:** a new target-app window, disabling SmoothQuit, pausing or changing rules cancels pending work.
 - **Menu bar optional:** hiding the icon leaves the service running. Open SmoothQuit from Finder or Spotlight to return to settings.
+- **Menu bar state feedback:** a brief rotation marks state changes; a dot indicates active monitoring and pause bars indicate inactive monitoring. Reduce Motion disables the transition. There is no repeating animation or idle timer.
 - **Separate Enable and Quit:** disabling automation keeps SmoothQuit running. Closing settings only closes the window. **Quit SmoothQuit** exits the utility itself.
 - **Pause and launch at login:** native macOS controls, with no background helper to install.
 - **Session diagnostics:** recent decisions and measured timings, held in memory only.
@@ -63,7 +64,7 @@ swift test
 ./scripts/build.sh
 ```
 
-Output: `Builds/Preview-1.3.1/SmoothQuit.app` and `SmoothQuit.dmg`, with build/test/signature reports and a source snapshot. The script does not install or launch the app. Build products are ignored by Git.
+Output: `Builds/Preview-1.4.0/SmoothQuit.app` and `SmoothQuit.dmg`, with build/test/signature reports and a source snapshot. The script does not install or launch the app. Build products are ignored by Git.
 
 Open `Package.swift` in Xcode to work on the project. SwiftUI and AppKit provide the interface; AXObserver, NSWorkspace and CoreGraphics provide observation. There are no third-party runtime packages.
 

@@ -11,6 +11,7 @@ final class IntegrationTests: XCTestCase {
         guard ProcessInfo.processInfo.environment["SMOOTHQUIT_LIVE_TEXTEDIT"] == "1" else {
             throw XCTSkip("Interaktywny test wymaga zgody i pustego okna TextEdit")
         }
+        _ = NSApplication.shared // Bootstrap the GUI event connection for live AX callbacks.
         XCTAssertTrue(AXIsProcessTrusted())
         let app = try XCTUnwrap(NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == "com.apple.TextEdit" })
         let windows = try WindowReader.windows(AXUIElementCreateApplication(app.processIdentifier))
@@ -35,12 +36,13 @@ final class IntegrationTests: XCTestCase {
         XCTAssertTrue(app.isTerminated)
     }
     /// Opt-in operator test. No app is launched by this test; the operator opens
-    /// Mail's main window or the disposable Preview document after LIVE READY.
+    /// Mail/Calendar’s main window or a disposable Preview document after LIVE READY.
     func testLiveMailOrPreviewCloseAndQuit() throws {
         guard let id = ProcessInfo.processInfo.environment["SMOOTHQUIT_LIVE_APP"],
-              ["com.apple.mail", "com.apple.Preview"].contains(id) else {
-            throw XCTSkip("Interaktywny test Mail/Podglądu wymaga zgody operatora")
+              ["com.apple.mail", "com.apple.Preview", "com.apple.iCal"].contains(id) else {
+            throw XCTSkip("Interactive Mail/Preview/Calendar test requires operator authorization")
         }
+        _ = NSApplication.shared // Bootstrap the GUI event connection for live AX callbacks.
         XCTAssertTrue(AXIsProcessTrusted())
         let monitor = Monitor()
         var prefs = Preferences(); prefs.rules = [AppRule(id: id, name: id)]
@@ -48,7 +50,7 @@ final class IntegrationTests: XCTestCase {
         let completed = expectation(description: "Target process exited after Quit")
         monitor.onDiagnostic = { entry in
             guard entry.bundleID == id else { return }
-            print("LIVE \(id): \(entry.message) elapsed=\(entry.elapsed ?? -1)"); fflush(stdout)
+            print("LIVE \(entry.date.ISO8601Format()) \(id): \(entry.message) elapsed=\(entry.elapsed ?? -1)"); fflush(stdout)
             if entry.requested {
                 XCTAssertGreaterThanOrEqual(entry.elapsed ?? 0, 0.5)
                 requested.fulfill()

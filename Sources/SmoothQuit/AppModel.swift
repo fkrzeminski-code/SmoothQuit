@@ -35,12 +35,16 @@ final class AppModel: ObservableObject {
     private let defaults: UserDefaults
     private var isStarted = false
     private var iconCache: [String: NSImage] = [:]
+    var isMonitoring: Bool {
+        preferences.enabled && !preferences.isPaused && trusted &&
+            (preferences.mode == .exclude || !preferences.rules.isEmpty)
+    }
     var status: String {
-        if !preferences.enabled { return "Automatyczne Quit wyłączone" }
-        if preferences.isPaused { return "Wstrzymano automatyczne Quit" }
-        if !trusted { return "Wymagana Dostępność" }
-        if preferences.mode == .include && preferences.rules.isEmpty { return "Wybierz aplikacje do testowania" }
-        return "Obserwacja aktywna"
+        if !preferences.enabled { return L("Automatic Quit disabled") }
+        if preferences.isPaused { return L("Automatic Quit paused") }
+        if !trusted { return L("Accessibility required") }
+        if preferences.mode == .include && preferences.rules.isEmpty { return L("Choose apps to test") }
+        return L("Monitoring active")
     }
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -52,7 +56,7 @@ final class AppModel: ObservableObject {
                 preferences = safe
             } else {
                 preferences = Preferences()
-                error = "Nie udało się odczytać ustawień. Przywrócono bezpieczny, pusty tryb Include."
+                error = L("Settings could not be read. Restored safe Include mode with an empty list.")
             }
         } else { preferences = Preferences() }
         monitor.onDiagnostic = { [weak self] entry in
@@ -87,7 +91,7 @@ final class AppModel: ObservableObject {
     func setLogin(_ enabled: Bool) {
         do {
             if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-        } catch { self.error = "Nie udało się zmienić autostartu: \(error.localizedDescription)" }
+        } catch { self.error = L("Could not change launch at login: %@", error.localizedDescription) }
         loginEnabled = SMAppService.mainApp.status == .enabled
         loginNeedsApproval = SMAppService.mainApp.status == .requiresApproval
     }
@@ -96,7 +100,7 @@ final class AppModel: ObservableObject {
     }
     func add(id: String, name: String? = nil) {
         let cleaned = id.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard Preferences.validBundleID(cleaned) else { error = "Wpisz poprawny Bundle ID, np. com.apple.TextEdit."; return }
+        guard Preferences.validBundleID(cleaned) else { error = L("Enter a valid Bundle ID, e.g. com.apple.TextEdit."); return }
         guard !preferences.rules.contains(where: { $0.id == cleaned }) else { return }
         preferences.rules.append(AppRule(id: cleaned, name: name ?? cleaned))
     }

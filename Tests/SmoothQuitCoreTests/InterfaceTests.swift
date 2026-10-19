@@ -13,6 +13,57 @@ final class InterfaceTests: XCTestCase {
         XCTAssertNotNil(image.tiffRepresentation)
         XCTAssertFalse(Brand.orbit.boundingBoxOfPath.isEmpty)
     }
+    @MainActor func testStatusIconShowsStateAndRespectsReducedMotion() throws {
+        let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
+        model.trusted = true
+        XCTAssertFalse(model.isMonitoring) // Empty Include list.
+        model.add(id: "com.apple.iCal")
+        XCTAssertTrue(model.isMonitoring)
+        model.preferences.enabled = false
+        XCTAssertFalse(model.isMonitoring)
+        model.preferences.enabled = true
+        model.preferences.pauseUntil = Date().addingTimeInterval(60)
+        XCTAssertFalse(model.isMonitoring)
+        model.preferences.pauseUntil = nil
+        model.trusted = false
+        XCTAssertFalse(model.isMonitoring)
+        let icon = StatusIconView(frame: NSRect(x: 0, y: 0, width: 18, height: 18))
+        icon.update(active: true, animated: true)
+        let enabled = try XCTUnwrap(icon.image?.tiffRepresentation)
+        icon.update(active: false, animated: true, reduceMotion: true)
+        XCTAssertNotEqual(enabled, icon.image?.tiffRepresentation)
+        XCTAssertTrue(icon.image?.isTemplate == true)
+        XCTAssertNil(icon.layer?.animation(forKey: "stateChange"))
+        XCTAssertNil(icon.hitTest(.zero)) // The native status button still receives clicks.
+        icon.update(active: true, animated: true, reduceMotion: false)
+        XCTAssertNotNil(icon.layer?.animation(forKey: "stateChange"))
+        icon.update(active: false, animated: true, reduceMotion: true)
+        XCTAssertNil(icon.layer?.animation(forKey: "stateChange"))
+    }
+    func testEnglishAndPolishResourcesAndDiagnosticFormats() throws {
+        let bundle = Localization.bundle
+        let en = try XCTUnwrap(Bundle(path: try XCTUnwrap(bundle.path(forResource: "en", ofType: "lproj"))))
+        let pl = try XCTUnwrap(Bundle(path: try XCTUnwrap(bundle.path(forResource: "pl", ofType: "lproj"))))
+        XCTAssertEqual(en.localizedString(forKey: "General", value: nil, table: nil), "General")
+        XCTAssertEqual(pl.localizedString(forKey: "General", value: nil, table: nil), "Ogólne")
+        let key = "Monitoring active: %d normal, %d auxiliary windows"
+        XCTAssertEqual(String(format: pl.localizedString(forKey: key, value: nil, table: nil), 2, 1),
+                       "Obserwacja aktywna: 2 normalnych, 1 pomocniczych okien")
+        let english = try XCTUnwrap(NSDictionary(contentsOf: try XCTUnwrap(en.url(forResource: "Localizable", withExtension: "strings"))))
+        let polish = try XCTUnwrap(NSDictionary(contentsOf: try XCTUnwrap(pl.url(forResource: "Localizable", withExtension: "strings"))))
+        XCTAssertEqual(Set(english.allKeys.compactMap { $0 as? String }), Set(polish.allKeys.compactMap { $0 as? String }))
+        let placeholders = try NSRegularExpression(pattern: "%[0-9$.]*[df@]")
+        for case let key as String in english.allKeys {
+            let translated = try XCTUnwrap(polish[key] as? String)
+            func formats(_ value: String) -> [String] {
+                placeholders.matches(in: value, range: NSRange(value.startIndex..., in: value)).map { String(value[Range($0.range, in: value)!]) }
+            }
+            XCTAssertEqual(formats(key), formats(translated), key)
+        }
+    }
     @MainActor func testMenuBarPreferencePreservesExistingAutomationAndPersists() throws {
         let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

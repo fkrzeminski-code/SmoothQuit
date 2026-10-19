@@ -101,6 +101,19 @@ final class CloseGateTests: XCTestCase {
         gate.destroyed(2, now: 10.2, delay: 0.5)
         XCTAssertFalse(quit(gate, pending))
     }
+    func testDelayedStartupDiscoveryRequiresAConfirmedClose() throws {
+        var gate = CloseGate()
+        gate.observe([]) // A launching app briefly publishes no AX windows.
+        XCTAssertNil(gate.pending)
+        gate.observe([ObservedWindow(1)]) // A bounded retry discovers its real window.
+        gate.observe([]) // A later empty list alone must never discard that identity.
+        XCTAssertNil(gate.pending)
+        XCTAssertEqual(gate.windows.count, 1)
+        let pending = try XCTUnwrap(gate.destroyed(1, now: 10, delay: 0.5))
+        XCTAssertFalse(quit(gate, pending, now: 10.49))
+        XCTAssertFalse(quit(gate, pending, cg: true))
+        XCTAssertTrue(quit(gate, pending))
+    }
     func testUnseenAndAuxiliaryCloseNeverArms() {
         var gate = CloseGate()
         XCTAssertNil(gate.destroyed(100, now: 1, delay: 0.5))

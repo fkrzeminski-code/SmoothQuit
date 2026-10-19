@@ -32,16 +32,16 @@ public struct Preferences: Codable, Equatable {
     }
     public var isPaused: Bool { pauseUntil.map { $0 > Date() } ?? false }
     public func reasonExcluded(_ id: String, ownID: String = "pl.smoothquit.app", now: Date = Date()) -> String? {
-        if !enabled { return "Automatyczne Quit wyłączone" }
-        if let pauseUntil, pauseUntil > now { return "Pauza" }
+        if !enabled { return "Automatic Quit disabled" }
+        if let pauseUntil, pauseUntil > now { return "Paused" }
         if id == ownID || id == "pl.smoothquit.app" || ["com.apple.dock", "com.apple.loginwindow", "com.apple.SystemUIServer", "com.apple.WindowManager", "com.apple.systempreferences"].contains(id) {
-            return "Chroniona aplikacja systemowa lub SmoothQuit"
+            return "Protected system app or SmoothQuit"
         }
         let rule = rules.first { $0.id == id }
-        if rule?.behavior == .never { return "Reguła: nigdy nie zamykaj" }
+        if rule?.behavior == .never { return "Rule: never quit" }
         if rule?.behavior == .allow { return nil }
-        if id == "com.apple.finder" { return "Finder chroniony — wymaga jawnej reguły Zawsze" }
-        return (mode == .include ? rule != nil : rule == nil) ? nil : "Poza listą Include / na liście Exclude"
+        if id == "com.apple.finder" { return "Finder protected — requires an explicit Always allow rule" }
+        return (mode == .include ? rule != nil : rule == nil) ? nil : "Outside Include list / on Exclude list"
     }
     public func delay(for id: String) -> Double {
         Self.boundedDelay(rules.first { $0.id == id }?.delay ?? delay)

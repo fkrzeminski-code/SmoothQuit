@@ -1,4 +1,4 @@
-# Design and review — 1.3
+# Design and review — 1.4
 
 SmoothQuit is a quiet background utility. Its settings should feel like Mac settings, with a small identity that remains recognizable in an 18-point menu bar slot.
 
@@ -16,7 +16,7 @@ Version 1.3.1 ships a layered Icon Composer document (`Assets/AppIcon.icon`), cr
 - SwiftUI grouped `Form` sections supply native margins, surfaces, dividers, switches and sliders. The large repeated brand header and custom list border were removed. Enable appears at the top of General; the app menu also exposes enable/disable.
 - The UI uses system body/callout/headline text and monospaced digits only for timing. Semantic primary/secondary text, window/control backgrounds and system separators adapt to appearance and contrast. No fixed hex substitutes for system UI colors.
 - Regular and compact layouts preserve the same three panes and use scrolling for longer settings. A persistent, quiet footer retains explicit Quit. Per-app rules remain behind selection; manual bundle-ID entry remains disclosed on demand.
-- No custom motion, repeating animation or decorative blur. Native controls supply feedback and respect system accessibility settings. Glass belongs to the system toolbar and interactive controls, not a stack of decorative content cards.
+- Menu artwork turns briefly (0.24 s) when monitoring changes state. A dot marks active monitoring; pause bars mark inactive monitoring, including disabled, paused or missing Accessibility. Reduce Motion skips the transition. There is no repeating animation or idle timer. No decorative blur. Native controls supply feedback and respect system accessibility settings. Glass belongs to the system toolbar and interactive controls, not a stack of decorative content cards.
 - The release build explicitly records the selected SDK rather than the deployment target as its linked SDK. This opts into current native rendering while keeping macOS 14 as the deployment target.
 
 ## HIG review
@@ -34,4 +34,8 @@ References: [Settings](https://developer.apple.com/design/human-interface-guidel
 
 Native rendering checked on macOS 27, plus test-host light/dark layout renders. Controls have accessible labels; the menu image is a template so the system supplies its light/dark coloring. This is not a full VoiceOver, keyboard-only or measured contrast certification. Offscreen renders can show inactive control styling and don't reproduce every compositor effect. See TESTING.md for engine and runtime coverage.
 
-Ponytail review: no new dependencies, no change to the window-observation engine, one shared brand geometry and a few native view changes. Release products, private local diagnostic history and development caches stay outside Git. Source and public documentation contain no machine-specific absolute paths.
+Ponytail review: no new dependencies, one bounded window-discovery recovery fix, one shared brand geometry and a few native view changes. Release products, private local diagnostic history and development caches stay outside Git. Source and public documentation contain no machine-specific absolute paths.
+
+## Language and motion review
+
+English is the development language; English and Polish use native `.lproj` resources shared by SwiftUI, AppKit and diagnostics. macOS supplies the app-specific language choice. The menu remains a native `NSStatusBarButton`; a noninteractive image subview animates its artwork without intercepting clicks. HIG `motion.md › Best practices` calls for purposeful, brief feedback and optional motion; `accessibility.md › Vision` requires state beyond color alone. Pause bars and an accessible status label preserve meaning without animation or color.

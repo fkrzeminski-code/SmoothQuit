@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     let model: AppModel
     init(model: AppModel = AppModel()) { self.model = model; super.init() }
     private var statusItem: NSStatusItem!
+    private let statusIcon = StatusIconView(frame: NSRect(x: 0, y: 0, width: 18, height: 18))
     private(set) var window: NSWindow?
     private var becameActive: NSObjectProtocol?
 
@@ -26,7 +27,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         NSApp.setActivationPolicy(.accessory)
         makeMainMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = Brand.image()
+        if let button = statusItem.button {
+            statusIcon.frame.origin = NSPoint(x: (button.bounds.width - 18) / 2, y: (button.bounds.height - 18) / 2)
+            statusIcon.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
+            button.addSubview(statusIcon)
+        }
         statusItem.button?.toolTip = "SmoothQuit"
         statusItem.menu = NSMenu(); statusItem.menu?.delegate = self
         // Never use .terminationOnRemoval: hiding the item is purely visual.
@@ -50,25 +55,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private func updateStatusItem() {
         statusItem?.isVisible = model.showInMenuBar
         statusItem?.button?.toolTip = "SmoothQuit — \(model.status)"
+        statusItem?.button?.setAccessibilityLabel("SmoothQuit — \(model.status)")
+        statusIcon.update(active: model.isMonitoring, animated: statusItem?.isVisible == true)
     }
     func menuWillOpen(_ menu: NSMenu) {
         menu.removeAllItems()
         let status = menu.addItem(withTitle: model.status, action: nil, keyEquivalent: ""); status.isEnabled = false
         menu.addItem(.separator())
-        add(menu, model.preferences.enabled ? "Disable SmoothQuit" : "Enable SmoothQuit", #selector(toggleEnabled))
-        if model.preferences.isPaused { add(menu, "Wznów", #selector(resume)) }
+        add(menu, model.preferences.enabled ? L("Disable SmoothQuit") : L("Enable SmoothQuit"), #selector(toggleEnabled))
+        if model.preferences.isPaused { add(menu, L("Resume"), #selector(resume)) }
         else {
-            let pause = NSMenuItem(title: "Wstrzymaj", action: nil, keyEquivalent: "")
+            let pause = NSMenuItem(title: L("Pause"), action: nil, keyEquivalent: "")
             let submenu = NSMenu()
             for minutes in [5, 15, 30, 60] {
-                let item = NSMenuItem(title: "\(minutes) minut", action: #selector(pause(_:)), keyEquivalent: "")
+                let item = NSMenuItem(title: L("%d minutes", minutes), action: #selector(pause(_:)), keyEquivalent: "")
                 item.target = self; item.tag = minutes; submenu.addItem(item)
             }
             pause.submenu = submenu; menu.addItem(pause)
         }
         menu.addItem(.separator())
-        add(menu, "Ustawienia…", #selector(showSettings), key: ",")
-        add(menu, "Quit SmoothQuit", #selector(quit), key: "q")
+        add(menu, L("Settings…"), #selector(showSettings), key: ",")
+        add(menu, L("Quit SmoothQuit"), #selector(quit), key: "q")
     }
     private func add(_ menu: NSMenu, _ title: String, _ action: Selector, key: String = "") {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key); item.target = self; menu.addItem(item)
@@ -76,27 +83,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private func makeMainMenu() {
         let bar = NSMenu(); let root = NSMenuItem(); let appMenu = NSMenu(title: "SmoothQuit")
         root.submenu = appMenu; bar.addItem(root)
-        add(appMenu, "SmoothQuit — informacje", #selector(about))
+        add(appMenu, L("About SmoothQuit"), #selector(about))
         appMenu.addItem(.separator())
-        add(appMenu, "Ustawienia…", #selector(showSettings), key: ",")
-        add(appMenu, "Enable SmoothQuit", #selector(toggleEnabled))
-        add(appMenu, "Show in Menu Bar", #selector(toggleMenuBar))
+        add(appMenu, L("Settings…"), #selector(showSettings), key: ",")
+        add(appMenu, L("Enable SmoothQuit"), #selector(toggleEnabled))
+        add(appMenu, L("Show in Menu Bar"), #selector(toggleMenuBar))
         appMenu.addItem(.separator())
-        let hide = appMenu.addItem(withTitle: "Ukryj SmoothQuit", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let hide = appMenu.addItem(withTitle: L("Hide SmoothQuit"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         hide.target = NSApp
-        appMenu.addItem(.separator()); add(appMenu, "Quit SmoothQuit", #selector(quit), key: "q")
-        let editRoot = NSMenuItem(); let edit = NSMenu(title: "Edycja"); editRoot.submenu = edit; bar.addItem(editRoot)
-        for (title, action, key) in [("Cofnij", Selector(("undo:")), "z"), ("Wytnij", #selector(NSText.cut(_:)), "x"), ("Kopiuj", #selector(NSText.copy(_:)), "c"), ("Wklej", #selector(NSText.paste(_:)), "v"), ("Zaznacz wszystko", #selector(NSText.selectAll(_:)), "a")] {
+        appMenu.addItem(.separator()); add(appMenu, L("Quit SmoothQuit"), #selector(quit), key: "q")
+        let editRoot = NSMenuItem(); let edit = NSMenu(title: L("Edit")); editRoot.submenu = edit; bar.addItem(editRoot)
+        for (title, action, key) in [(L("Undo"), Selector(("undo:")), "z"), (L("Cut"), #selector(NSText.cut(_:)), "x"), (L("Copy"), #selector(NSText.copy(_:)), "c"), (L("Paste"), #selector(NSText.paste(_:)), "v"), (L("Select All"), #selector(NSText.selectAll(_:)), "a")] {
             edit.addItem(withTitle: title, action: action, keyEquivalent: key)
         }
-        let viewRoot = NSMenuItem(); let viewMenu = NSMenu(title: "Widok")
+        let viewRoot = NSMenuItem(); let viewMenu = NSMenu(title: L("View"))
         viewRoot.submenu = viewMenu; bar.addItem(viewRoot)
-        for (index, title) in ["Ogólne", "Aplikacje", "Aktywność"].enumerated() {
+        for (index, title) in [L("General"), L("Applications"), L("Activity")].enumerated() {
             let item = viewMenu.addItem(withTitle: title, action: #selector(showPane(_:)), keyEquivalent: String(index + 1))
             item.target = self; item.tag = index
         }
-        let windowRoot = NSMenuItem(); let windows = NSMenu(title: "Okno"); windowRoot.submenu = windows; bar.addItem(windowRoot)
-        windows.addItem(withTitle: "Zamknij", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let windowRoot = NSMenuItem(); let windows = NSMenu(title: L("Window")); windowRoot.submenu = windows; bar.addItem(windowRoot)
+        windows.addItem(withTitle: L("Close"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         NSApp.windowsMenu = windows; NSApp.mainMenu = bar
     }
     func makeSettingsWindow() -> NSWindow {
@@ -123,7 +130,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(toggleEnabled) {
-            item.title = model.preferences.enabled ? "Disable SmoothQuit" : "Enable SmoothQuit"
+            item.title = model.preferences.enabled ? L("Disable SmoothQuit") : L("Enable SmoothQuit")
         } else if item.action == #selector(toggleMenuBar) {
             item.state = model.showInMenuBar ? .on : .off
         }
