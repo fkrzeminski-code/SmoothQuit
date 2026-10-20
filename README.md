@@ -11,7 +11,7 @@ SmoothQuit is a small, native macOS menu bar utility that asks an app to quit af
 
 1. Download `SmoothQuit.dmg` from [Releases](https://github.com/fkrzeminski-code/SmoothQuit/releases). Choose the latest release; the universal app contains Apple Silicon and Intel code.
 2. Open the DMG and drag **SmoothQuit** into **Applications**. Quit an older running copy before replacing it. Run from Applications, not the mounted DMG, if you want launch at login.
-3. In **System Settings → Privacy & Security → Accessibility**, add and enable SmoothQuit. This is its only required permission. If macOS blocks a trusted download, use its normal **Open Anyway** flow if offered; do not disable Gatekeeper or SIP.
+3. In **System Settings → Privacy & Security → Accessibility**, add and enable SmoothQuit. This is its only required permission for window monitoring. Update alerts use optional notification permission, requested only when a newer release is found. If macOS blocks a trusted download, use its normal **Open Anyway** flow if offered; do not disable Gatekeeper or SIP.
 4. In **Applications**, start with **Include** and add one app with an empty or disposable document. A fresh installation starts with an empty Include list, so it closes nothing until you select an app.
 5. Turn on **Enable SmoothQuit**. The default delay is **0.5 seconds**.
 
@@ -34,18 +34,23 @@ The app supports **English and Polish** using native macOS localization. It foll
 - **Menu bar optional:** hiding the icon leaves the service running. Open SmoothQuit from Finder or Spotlight to return to settings.
 - **Clear menu bar states:** the orbit distinguishes active, disabled, paused, missing Accessibility and initial app selection. One centered 360° turn marks an intentional Enable/Disable action; automatic status refreshes stay still. Reduce Motion disables the turn.
 - **Live pause countdown:** the open menu shows how much time remains, and Settings shows the remaining time too. Pause resumes automatically; Disable stays off until you enable it. The menu timer runs only while a paused menu is open.
-- **Separate Enable and Quit:** disabling automation keeps SmoothQuit running. Closing settings only closes the window. **Quit SmoothQuit** exits the utility itself.
+- **Separate Enable and Quit:** disabling automation keeps SmoothQuit running. Closing settings hides the settings UI and lets macOS restore the foreground app and its menu. **Quit SmoothQuit** exits the utility itself.
 - **Pause and launch at login:** native macOS controls, with no background helper to install.
-- **Readable activity:** app names, icons, Quit requests, confirmed exits and cancelled or blocked decisions. Raw diagnostics stay available separately, with app filtering and Copy Details. Incoming entries wait behind a button so they do not move the list while you read.
+- **Readable activity:** app names, icons, Quit requests, confirmed exits and cancelled or blocked decisions. A matched request and process exit form one activity row, with both available in Quit Details. Raw diagnostics stay available separately, with app filtering and Copy Details. Incoming entries wait behind a button so they do not move the list while you read.
 - **Native rule editing:** searchable rules, a per-app settings sheet, custom delays and Undo/Redo for removal. The app chooser hides declared background helpers by default and supports manual Bundle IDs.
 
 Finder is protected by default. SmoothQuit always protects its own process. A normal Quit lets the target app present its save dialog or refuse to quit; SmoothQuit never force-quits or repeatedly sends Quit.
 
-Release 1.5.0 is published as a regular GitHub release. This does not change its ad hoc signing or imply Apple notarization.
+- **Version and About:** the Settings footer displays the running app version. About shows the build number, project links and update controls. SmoothQuit’s app menu belongs to its active Settings UI; it does not take over another app’s menu in the background.
+- **Updates:** Check for Updates manually, or check once at launch. Only a newer stable release triggers a local macOS notification, subject to your notification settings and Focus. Click it to view the release; downloads and installation remain your choice. No background polling or automatic installation.
+- **Explain a running app:** Activity provides an explicit, read-only window/rule inspection without restarting monitoring or sending Quit.
+- **Quick exceptions and reports:** Keep the last regular foreground app running from the status menu, without changing Include/Exclude mode. Copy Diagnostic Report copies version, macOS, rules and up to 20 filtered events to the clipboard; it never sends them.
+
+Release 1.6.0 is published as a regular GitHub release. This does not change its ad hoc signing or imply Apple notarization.
 
 ## Privacy
 
-No telemetry, analytics, ads, account, updater or network requests. No window titles, document paths or contents, screenshots, or keystrokes are recorded. Diagnostics contain bundle identifiers, timing and decision reasons; the last 200 entries live only in memory. Preferences are saved locally using UserDefaults. Neither Screen Recording nor Input Monitoring is required.
+No telemetry, analytics, ads, account or automatic installer. Version 1.6 adds a single anonymous HTTPS request to the public GitHub Releases API at launch, enabled by default, and on manual Check for Updates. Turn off **Check for updates at launch** to disable automatic requests. No application rules, window data or diagnostic reports are uploaded; GitHub receives ordinary connection metadata for the request. No window titles, document paths or contents, screenshots, or keystrokes are recorded. Diagnostics contain bundle identifiers, timing and decision reasons; the last 200 entries live only in memory. Preferences are saved locally using UserDefaults. Neither Screen Recording nor Input Monitoring is required. Notifications are optional and local; SmoothQuit does not register for remote push notifications.
 
 Accessibility is a powerful system permission. SmoothQuit uses public AX APIs to observe window state, and `NSRunningApplication.terminate()` to request normal termination. [Read the safety model and limitations](docs/SAFETY.md).
 
@@ -68,7 +73,7 @@ swift test
 ./scripts/build.sh
 ```
 
-Output: `Builds/Release-1.5.0/SmoothQuit.app` and `SmoothQuit.dmg`, with build/test/signature reports and a source snapshot. The script does not install or launch the app. Build products are ignored by Git.
+Output: `Builds/Release-1.6.0/SmoothQuit.app` and `SmoothQuit.dmg`, with build/test/signature reports and a source snapshot. The script does not install or launch the app. Build products are ignored by Git.
 
 Open `Package.swift` in Xcode to work on the project. SwiftUI and AppKit provide the interface; AXObserver, NSWorkspace and CoreGraphics provide observation. There are no third-party runtime packages.
 

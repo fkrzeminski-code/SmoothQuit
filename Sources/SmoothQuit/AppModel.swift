@@ -47,6 +47,10 @@ final class AppModel: ObservableObject {
     @Published var loginEnabled = SMAppService.mainApp.status == .enabled
     @Published var loginNeedsApproval = SMAppService.mainApp.status == .requiresApproval
     @Published var error: String?
+    @Published var inspection = ""
+    @Published var isInspecting = false
+    let updates: UpdateChecker
+    var onAbout: (() -> Void)?
     var onChange: ((Bool) -> Void)?
     private let monitor = Monitor()
     private let defaults: UserDefaults
@@ -87,6 +91,7 @@ final class AppModel: ObservableObject {
     }
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        updates = UpdateChecker(defaults: defaults)
         showInMenuBar = defaults.object(forKey: "showInMenuBar") as? Bool ?? true
         if let data = defaults.data(forKey: "preferences.v1") {
             if let stored = try? JSONDecoder().decode(Preferences.self, from: data) {
@@ -165,6 +170,46 @@ final class AppModel: ObservableObject {
         // Evaluate the saved rule independently of the temporary global pause/off state.
         var value = preferences; value.enabled = true; value.pauseUntil = nil
         return value.reasonExcluded(id) == nil ? L("Will quit after the last window closes") : L("Kept running")
+    }
+    func keepRunning(_ id: String, name: String) {
+        guard Preferences.validBundleID(id), id != "pl.smoothquit.app", id != Bundle.main.bundleIdentifier else { return }
+        var value = preferences
+        if let index = value.rules.firstIndex(where: { $0.id == id }) { value.rules[index].behavior = .never }
+        else {
+            var rule = AppRule(id: id, name: name); rule.behavior = .never
+            value.rules.append(rule)
+        }
+        preferences = value
+    }
+    func inspect(_ pid: pid_t) {
+        guard !isInspecting else { return }
+        guard let app = NSRunningApplication(processIdentifier: pid) else {
+            inspection = L("This app is not running."); return
+        }
+        isInspecting = true
+        monitor.inspect(app, preferences: preferences) { [weak self] text in
+            self?.inspection = text; self?.isInspecting = false
+        }
+    }
+    func diagnosticReport(entries: [Diagnostic]) -> String {
+        let header = [AppVersion.display + " (" + AppVersion.build + ")",
+                      "macOS " + ProcessInfo.processInfo.operatingSystemVersionString,
+                      "Enabled: \(preferences.enabled); mode: \(preferences.mode.rawValue); Accessibility: \(trusted)",
+                      "Delay: \(preferences.delay) s; hidden: \(preferences.monitorHidden); minimized: \(preferences.monitorMinimized)",
+                      "Paused until: \(preferences.pauseUntil?.ISO8601Format() ?? "—")",
+                      "Rules: " + preferences.rules.map { "\($0.id): \($0.behavior.rawValue), delay=\($0.delay.map(String.init(describing:)) ?? "default")" }.joined(separator: "; ")]
+        func line(_ entry: Diagnostic) -> String {
+            "\(entry.date.ISO8601Format()) \(entry.bundleID) \(entry.message) elapsed=\(entry.elapsed.map(String.init(describing:)) ?? "—")"
+        }
+        let chosen = Array(entries.prefix(20)), ids = Set(chosen.map(\.id))
+        let lines = chosen.flatMap { entry -> [String] in
+            if entry.completed, let quitID = entry.quitID,
+               let request = diagnostics.first(where: { $0.requested && $0.quitID == quitID }), !ids.contains(request.id) {
+                return [line(request), line(entry)]
+            }
+            return [line(entry)]
+        }
+        return (header + ["", "Selected events (up to 20):"] + lines).joined(separator: "\n")
     }
     func removeRule(_ id: String, undoManager: UndoManager?) {
         guard let index = preferences.rules.firstIndex(where: { $0.id == id }) else { return }

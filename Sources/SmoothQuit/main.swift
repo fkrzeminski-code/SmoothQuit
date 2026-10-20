@@ -1,8 +1,9 @@
 import AppKit
 import SwiftUI
 import CoreServices
+import UserNotifications
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemValidation {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate, NSMenuItemValidation, UNUserNotificationCenterDelegate {
     let model: AppModel
     init(model: AppModel = AppModel()) { self.model = model; super.init() }
     private var statusItem: NSStatusItem!
@@ -12,6 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private var accessibilityOptions: NSObjectProtocol?
     private var menuTimer: Timer?
     private weak var countdownItem: NSMenuItem?
+    private var lastExternalApp: NSRunningApplication?
+    private var activatedApp: NSObjectProtocol?
+    private(set) var aboutWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // LaunchServices normally reuses this process (Spotlight/Finder/open).
@@ -28,7 +32,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             return
         }
         NSApp.setActivationPolicy(.accessory)
+        rememberExternalApp(NSWorkspace.shared.frontmostApplication)
+        activatedApp = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            self?.rememberExternalApp(note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)
+        }
         makeMainMenu()
+        model.onAbout = { [weak self] in self?.about() }
+        let notifications = UNUserNotificationCenter.current()
+        notifications.delegate = self
+        model.updates.onResult = { [weak self] phase, automatically in
+            if automatically, case .available(let release) = phase { self?.notifyUpdate(release) }
+        }
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
             statusIcon.frame.origin = NSPoint(x: (button.bounds.width - 18) / 2, y: (button.bounds.height - 18) / 2)
@@ -49,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             self?.updateStatusItem()
         }
         if Self.shouldShowSettings(onLaunch: NSAppleEventManager.shared().currentAppleEvent) { showSettings() }
+        model.updates.check(automatically: true)
     }
     static func shouldShowSettings(onLaunch event: NSAppleEventDescriptor?) -> Bool {
         !(event?.eventID == kAEOpenApplication &&
@@ -100,7 +115,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
             pause.submenu = submenu; menu.addItem(pause)
         }
         menu.addItem(.separator())
+        if let app = lastExternalApp, !app.isTerminated, let id = app.bundleIdentifier {
+            let item = NSMenuItem(title: L("Keep %@ Running", app.localizedName ?? id), action: #selector(keepLastAppRunning), keyEquivalent: "")
+            item.target = self; item.representedObject = app
+            item.isEnabled = model.preferences.rules.first(where: { $0.id == id })?.behavior != .never
+            menu.addItem(item)
+        }
+        if let release = model.updates.availableRelease {
+            add(menu, L("Update Available: %@…", release.version), #selector(checkUpdates))
+        }
         add(menu, L("Settings…"), #selector(showSettings), key: ",")
+        add(menu, L("About SmoothQuit"), #selector(about))
+        add(menu, L("Check for Updates…"), #selector(checkUpdates))
         add(menu, L("Quit SmoothQuit"), #selector(quit), key: "q")
     }
     func menuDidClose(_ menu: NSMenu) {
@@ -113,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let bar = NSMenu(); let root = NSMenuItem(); let appMenu = NSMenu(title: "SmoothQuit")
         root.submenu = appMenu; bar.addItem(root)
         add(appMenu, L("About SmoothQuit"), #selector(about))
+        add(appMenu, L("Check for Updates…"), #selector(checkUpdates))
         appMenu.addItem(.separator())
         add(appMenu, L("Settings…"), #selector(showSettings), key: ",")
         add(appMenu, L("Enable SmoothQuit"), #selector(toggleEnabled))
@@ -145,6 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let tabs = SettingsTabs(model: model)
         let newWindow = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 680, height: 650), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
         newWindow.contentViewController = tabs
+        newWindow.delegate = self
         newWindow.contentMinSize = NSSize(width: 640, height: 540)
         newWindow.isReleasedWhenClosed = false
         newWindow.tabbingMode = .disallowed
@@ -159,15 +187,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
     @objc func showSettings() {
         let window = makeSettingsWindow()
-        NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+        NSApp.unhideWithoutActivation()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
         // Reopening settings must not reset an otherwise healthy monitor.
         model.checkPermission()
+    }
+    func windowWillClose(_ notification: Notification) {
+        guard let closing = notification.object as? NSWindow, closing === window else { return }
+        if let aboutWindow, closing.attachedSheet === aboutWindow { closing.endSheet(aboutWindow) }
+        // AppKit restores the previous foreground app and its menu. Monitoring continues.
+        if closing.isVisible { NSApp.hide(nil) }
     }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(toggleEnabled) {
             item.title = model.preferences.enabled ? L("Disable SmoothQuit") : L("Enable SmoothQuit")
         } else if item.action == #selector(toggleMenuBar) {
             item.state = model.showInMenuBar ? .on : .off
+        } else if item.action == #selector(checkUpdates) {
+            return !model.updates.isChecking
+        } else if item.action == #selector(keepLastAppRunning), let app = item.representedObject as? NSRunningApplication {
+            return !app.isTerminated && model.preferences.rules.first(where: { $0.id == app.bundleIdentifier })?.behavior != .never
         }
         return true
     }
@@ -183,7 +223,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     }
     @objc private func resume() { model.pause(minutes: nil) }
     @objc private func pause(_ sender: NSMenuItem) { model.pause(minutes: sender.tag) }
-    @objc private func about() { NSApp.orderFrontStandardAboutPanel(nil); NSApp.activate(ignoringOtherApps: true) }
+    private func rememberExternalApp(_ app: NSRunningApplication?) {
+        guard let app, app.activationPolicy == .regular, app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              app.bundleIdentifier != "pl.smoothquit.app" else { return }
+        lastExternalApp = app
+    }
+    @objc private func keepLastAppRunning(_ sender: NSMenuItem) {
+        guard let app = sender.representedObject as? NSRunningApplication, !app.isTerminated, let id = app.bundleIdentifier else { return }
+        model.keepRunning(id, name: app.localizedName ?? id)
+    }
+    @objc func about() {
+        showSettings()
+        guard let window, window.attachedSheet == nil else { return }
+        let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 410), styleMask: [.titled], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.contentViewController = NSHostingController(rootView: AboutView(updates: model.updates) { [weak window, weak panel] in
+            if let panel { window?.endSheet(panel) }
+        })
+        aboutWindow = panel
+        window.beginSheet(panel)
+    }
+    @objc private func checkUpdates() { about(); model.updates.check() }
+    private func notifyUpdate(_ release: ReleaseInfo) {
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert]) { [weak self] granted, error in
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.model.updates.automaticallyChecks else { return }
+                guard granted, error == nil else {
+                    self.model.updates.notificationHint = L("Notifications are off. Available updates are still shown here and in the menu.")
+                    return
+                }
+                let content = UNMutableNotificationContent()
+                content.title = L("SmoothQuit update available")
+                content.body = L("Version %@ is available. Click to view the release.", release.version)
+                content.userInfo = ["releaseURL": release.html_url]
+                center.add(UNNotificationRequest(identifier: "smoothquit-update", content: content, trigger: nil)) { [weak self] error in
+                    if error != nil {
+                        DispatchQueue.main.async { self?.model.updates.notificationHint = L("Could not deliver a notification. The update remains available here.") }
+                    }
+                }
+            }
+        }
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list])
+    }
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+           let value = response.notification.request.content.userInfo["releaseURL"] as? String,
+           let url = ReleaseInfo.releaseURL(value) {
+            DispatchQueue.main.async { NSWorkspace.shared.open(url) }
+        }
+        completionHandler()
+    }
     @objc private func quit() { NSApp.terminate(nil) }
 }
 

@@ -11,10 +11,19 @@ struct Diagnostic: Identifiable {
     var completed = false
     var elapsed: Double?
     var summary: String?
+    var quitID: UUID?
     var activityMessage: String {
         if completed { return L("Exited after a normal Quit request") }
         if requested { return L("Quit requested — waiting for the app to exit") }
         return summary ?? message
+    }
+    static func activityEntries(_ entries: [Diagnostic], historyOnly: Bool) -> [Diagnostic] {
+        let completed = Set(entries.filter(\.completed).compactMap(\.quitID))
+        return entries.filter {
+            ($0.summary != nil || $0.requested || $0.completed) &&
+            (!historyOnly || $0.requested || $0.completed) &&
+            !($0.requested && $0.quitID.map { completed.contains($0) } == true)
+        }
     }
 }
 
@@ -137,6 +146,7 @@ final class Monitor {
         var readWasTransient = false
         var requestedAt: Double?
         var closeAt: Double?
+        var quitID: UUID?
         init(app: NSRunningApplication, element: AXUIElement, observer: AXObserver, context: ObserverContext) {
             self.app = app; self.element = element; self.observer = observer; self.context = context
         }
@@ -208,8 +218,8 @@ final class Monitor {
         fence.invalidate()
         queue.async { self.removeAll(); self.reconcile() }
     }
-    private func emit(_ id: String, _ message: String, elapsed: Double? = nil, requested: Bool = false, completed: Bool = false, summary: String? = nil) {
-        let entry = Diagnostic(bundleID: id, message: message, requested: requested, completed: completed, elapsed: elapsed, summary: summary)
+    private func emit(_ id: String, _ message: String, elapsed: Double? = nil, requested: Bool = false, completed: Bool = false, summary: String? = nil, quitID: UUID? = nil) {
+        let entry = Diagnostic(bundleID: id, message: message, requested: requested, completed: completed, elapsed: elapsed, summary: summary, quitID: quitID)
         DispatchQueue.main.async { self.onDiagnostic?(entry) }
     }
     private func remove(_ pid: pid_t) {
@@ -237,7 +247,7 @@ final class Monitor {
         if name == NSWorkspace.didTerminateApplicationNotification, let app {
             if let watch = watches[app.processIdentifier], watch.app == app,
                let closeAt = watch.closeAt, watch.requestedAt != nil {
-                emit(app.bundleIdentifier ?? "", L("Process exited after a normal Quit request"), elapsed: now - closeAt, completed: true)
+                emit(app.bundleIdentifier ?? "", L("Process exited after a normal Quit request"), elapsed: now - closeAt, completed: true, quitID: watch.quitID)
             }
             remove(app.processIdentifier)
         }
@@ -434,7 +444,7 @@ final class Monitor {
         if name == kAXWindowCreatedNotification {
             emit(id, L("AX: new window created"))
             cancel(watch, reason: L("Cancelled: a new window was created"))
-            watch.requestedAt = nil; watch.closeAt = nil
+            watch.requestedAt = nil; watch.closeAt = nil; watch.quitID = nil
             readWhenReady(watch)
         } else if name == kAXUIElementDestroyedNotification {
             guard watch.requestedAt == nil else { return }
@@ -509,8 +519,49 @@ final class Monitor {
         }) else { block(L("Quit cancelled: a new event arrived during verification")); return }
         watch.gate.cancel(); watch.timer = nil
         if sent {
-            watch.closeAt = pending.closedAt; watch.requestedAt = now
-            emit(id, L("Normal Quit requested. Read %.0f ms; queue +%.0f ms. Waiting for process exit.", (now - started) * 1000, lateness * 1000), elapsed: now - pending.closedAt, requested: true)
+            watch.closeAt = pending.closedAt; watch.requestedAt = now; watch.quitID = UUID()
+            emit(id, L("Normal Quit requested. Read %.0f ms; queue +%.0f ms. Waiting for process exit.", (now - started) * 1000, lateness * 1000), elapsed: now - pending.closedAt, requested: true, quitID: watch.quitID)
         } else { emit(id, L("The system did not accept the Quit request"), elapsed: now - pending.closedAt, summary: L("The system did not accept the Quit request")) }
+    }
+    // Explicit diagnostic read: never changes observers, identities, deadlines or Quit eligibility.
+    func inspect(_ app: NSRunningApplication, preferences value: Preferences, completion: @escaping (String) -> Void) {
+        queue.async { [self] in
+            let text: String
+            let id = app.bundleIdentifier ?? ""
+            if app.isTerminated { text = L("This app is not running.") }
+            else if !AXIsProcessTrusted() { text = L("Accessibility required") }
+            else if let reason = value.reasonExcluded(id, ownID: ownID) { text = L("Not monitored: %@", L(reason)) }
+            else if app.activationPolicy != .regular { text = L("Background apps are not monitored.") }
+            else if !value.monitorHidden && app.isHidden { text = L("Kept running: the app is hidden") }
+            else if let watch = watches[app.processIdentifier], watch.requestedAt != nil {
+                text = L("Quit requested — waiting for the app to exit")
+            } else if let pending = watches[app.processIdentifier]?.gate.pending {
+                text = L("Verifying the last window in %.2f s", max(0, pending.deadline - now))
+            } else {
+                do {
+                    let element = AXUIElementCreateApplication(app.processIdentifier)
+                    AXUIElementSetMessagingTimeout(element, 0.12)
+                    let windows = try WindowReader.windows(element)
+                    let started = now
+                    var normal = 0, auxiliary = 0, minimized = 0
+                    for (index, window) in windows.enumerated() {
+                        guard now - started < 0.35 else { throw WindowReadError.budget }
+                        let metadata = try WindowReader.metadata(window, id: UInt64(index))
+                        if metadata.kind == .normal { normal += 1 } else { auxiliary += 1 }
+                        if metadata.minimized { minimized += 1 }
+                    }
+                    if !windows.isEmpty {
+                        text = L("Kept running: %d normal, %d auxiliary, %d minimized windows.", normal, auxiliary, minimized)
+                    } else if watches[app.processIdentifier]?.gate.windows.isEmpty == false {
+                        text = L("Kept running: a remembered window has not confirmed its closure, possibly on another Space.")
+                    } else if WindowReader.cgHasWindows(pid: app.processIdentifier) != false {
+                        text = L("Kept running: WindowServer still reports a window or an uncertain state.")
+                    } else if watches[app.processIdentifier] == nil {
+                        text = L("Waiting for Accessibility observation to become ready.")
+                    } else { text = L("No windows now. Waiting for a confirmed normal-window close; an empty list alone never triggers Quit.") }
+                } catch { text = L("Kept running: window state could not be confirmed") }
+            }
+            DispatchQueue.main.async { completion(text) }
+        }
     }
 }

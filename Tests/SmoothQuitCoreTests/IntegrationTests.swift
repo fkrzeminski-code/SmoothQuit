@@ -63,6 +63,34 @@ final class IntegrationTests: XCTestCase {
         prefs.enabled = false; monitor.update(prefs)
         XCTAssertTrue(NSRunningApplication.runningApplications(withBundleIdentifier: id).isEmpty)
     }
+    func testLivePreviewKeepsExistingWindowsAfterDisposableClose() throws {
+        guard ProcessInfo.processInfo.environment["SMOOTHQUIT_LIVE_PREVIEW_KEEP"] == "1" else {
+            throw XCTSkip("Requires operator-prepared disposable Preview window and an existing window to protect")
+        }
+        _ = NSApplication.shared
+        XCTAssertTrue(AXIsProcessTrusted())
+        let app = try XCTUnwrap(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Preview").first)
+        let existing = try WindowReader.windows(AXUIElementCreateApplication(app.processIdentifier))
+        guard existing.contains(where: { (try? WindowReader.metadata($0, id: 0))?.kind == .normal }) else {
+            throw XCTSkip("AX cannot confirm an existing normal Preview window; activate its document before this test")
+        }
+        let monitor = Monitor()
+        var prefs = Preferences(); prefs.rules = [AppRule(id: "com.apple.Preview", name: "Preview")]
+        let blocked = expectation(description: "Existing window vetoes Quit")
+        let noQuit = expectation(description: "No Quit while another window exists"); noQuit.isInverted = true
+        monitor.onDiagnostic = { entry in
+            print("PREVIEW KEEP: \(entry.message) elapsed=\(entry.elapsed ?? -1)"); fflush(stdout)
+            if entry.summary == L("Kept running: an open or remembered window remains") { blocked.fulfill() }
+            if entry.requested || entry.completed { noQuit.fulfill() }
+        }
+        monitor.start(preferences: prefs)
+        print("LIVE READY: open and close ONLY the disposable Preview test document"); fflush(stdout)
+        wait(for: [blocked], timeout: 60)
+        wait(for: [noQuit], timeout: 1)
+        prefs.enabled = false; monitor.update(prefs)
+        XCTAssertFalse(app.isTerminated)
+        XCTAssertFalse(try WindowReader.windows(AXUIElementCreateApplication(app.processIdentifier)).isEmpty)
+    }
     func testFenceRejectsEventDuringSlowRead() {
         let fence = EventFence(); let revision = fence.snapshot()
         let event = expectation(description: "Incoming event")

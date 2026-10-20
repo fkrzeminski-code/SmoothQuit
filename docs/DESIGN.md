@@ -56,3 +56,14 @@ Applications uses a flexible native list rather than nested scrolling. A sheet c
 Pause displays a remaining-time value in the open native menu and Settings. The menu timer is invalidated on close; a single scheduled expiry updates presentation without restarting the monitoring engine. Disable is indefinite and clears a prior pause, so a later Enable has an unambiguous effect.
 
 Ponytail Full review: reused the existing AppModel, preferences, native menu and AX engine. No new runtime package, background polling service, design framework or settings persistence layer was introduced. Removed the permanent autosave message and nested rules-list scrolling. Timer ownership is bounded to an open paused menu plus one scheduled pause-expiry notification. Review also preserved the existing Quit-history filter, stopped automatic refreshes from interrupting a turn, and added a fallback for app bundles whose display-name fields are empty.
+
+
+## 1.6 version, updates and foreground ownership
+
+The footer displays the version from the running bundle. About is a native sheet attached to Settings, so it does not create an independent foreground workflow. Closing Settings hides the utility UI through AppKit; reopening unhides the same window and requests activation using the modern API. macOS owns focus and the active application menu; there are no focus timers, global event interception or forced activation loops.
+
+Updates use an ephemeral URLSession, once per launch or on explicit request, with a persisted opt-out for launch checks. Only newer stable versions with validated GitHub release links are offered. Network, rate-limit and invalid-metadata errors are not reported as up-to-date results. Local notification authorization is requested in context, after a newer release is found; denied notifications leave the available version visible in the UI. There is no auto-installer or recurring network timer.
+
+A per-Quit UUID associates a request with its process exit without conflating separate launches of one bundle. Raw diagnostics remain unchanged. Inspection executes on the existing serial AX worker, with the same read budget, without touching observers, the identity ledger or pending deadlines. The quick exception adds a Never rule without changing selection mode or a custom delay. Diagnostic reports are explicit clipboard actions, limited to 20 displayed events plus version, macOS and saved rules.
+
+Ponytail Full review: kept update checks separate from automation preferences, so network/UI actions never restart AX monitoring. Reused the native session, menu, sheet and notification APIs; no updater framework or installer was added. Retained strict version/link validation and bounded report size. Removed activation assumptions from the interactive fixture: macOS user intent controls focus, and the utility uses native hide/unhide rather than a focus-enforcement loop.

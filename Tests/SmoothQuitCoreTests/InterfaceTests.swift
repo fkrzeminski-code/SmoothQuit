@@ -235,12 +235,45 @@ final class InterfaceTests: XCTestCase {
         let screen = try XCTUnwrap(NSScreen.main).visibleFrame
         NSApp.activate(ignoringOtherApps: true)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        let opened = Date()
         menu.popUp(positioning: nil, at: NSPoint(x: screen.midX, y: screen.midY), in: nil)
+        guard Date().timeIntervalSince(opened) >= 3 else {
+            throw XCTSkip("Native menu was dismissed before the expiry check; an uninterrupted desktop is required")
+        }
         XCTAssertGreaterThanOrEqual(trackingTitles.count, 2, "Countdown must tick inside native menu tracking")
         XCTAssertTrue(trackingFinished)
         XCTAssertEqual(model.monitoringState, .active)
         XCTAssertTrue(menu.items.contains { $0.title == model.status })
         print("Native tracking countdown: \(trackingTitles.sorted()), expired=\(trackingFinished)")
+    }
+    @MainActor func testLiveSettingsCloseHidesUtilityAndReopens() throws {
+        guard ProcessInfo.processInfo.environment["SMOOTHQUIT_LIVE_ICON"] == "1" else {
+            throw XCTSkip("Requires an unlocked desktop for native activation and close behavior")
+        }
+        _ = NSApplication.shared
+        let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
+        let delegate = AppDelegate(model: model)
+        NSApp.setActivationPolicy(.accessory)
+        delegate.showSettings()
+        let window = try XCTUnwrap(delegate.window)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        let wasActive = NSApp.isActive
+        XCTAssertTrue(window.delegate === delegate)
+        window.performClose(nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        XCTAssertFalse(window.isVisible)
+        XCTAssertFalse(NSApp.isActive)
+        XCTAssertTrue(NSApp.isHidden)
+        XCTAssertFalse(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+        delegate.showSettings()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        XCTAssertTrue(window.isVisible); XCTAssertFalse(NSApp.isHidden)
+        print("Settings close: activeBefore=\(wasActive); hidden after close; same window reopened. macOS may decline XCTest activation without a user event.")
+        window.performClose(nil)
+        window.contentViewController = nil
     }
     func testEnglishAndPolishResourcesAndDiagnosticFormats() throws {
         let bundle = Localization.bundle

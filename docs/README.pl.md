@@ -25,7 +25,7 @@ W **Exclude** lista oznacza wyjątki; w **Include** — aplikacje do obsługi. R
 - Nowe okno anuluje odliczanie. Niepewny odczyt AX blokuje Quit.
 - Otwarte okna zminimalizowane, ukryte, pomocnicze, pełnoekranowe i zapamiętane na innych Spaces również blokują Quit. Opcje monitorowania tych stanów nie pozwalają ignorować istniejących okien.
 - Zwykłe Quit pozwala aplikacji zapytać o zapis dokumentu albo odmówić zakończenia.
-- Brak telemetrii, reklam i komunikacji sieciowej. Brak zapisu tytułów okien, treści dokumentów, klawiszy i zrzutów ekranu. Ostatnie 200 wpisów diagnostyki znajduje się tylko w RAM.
+- Brak telemetrii i reklam. Od wersji 1.6 sprawdzanie uaktualnień łączy się z publicznym API GitHub; automatyczne sprawdzanie przy starcie można wyłączyć. Brak zapisu tytułów okien, treści dokumentów, klawiszy i zrzutów ekranu. Ostatnie 200 wpisów diagnostyki znajduje się tylko w RAM.
 
 Publiczne API nie gwarantują atomowego odczytu wszystkich Spaces i zakończenia obcego procesu. Aplikacje z niepełnym AX mogą pozostać uruchomione. Szczegóły: [model bezpieczeństwa](SAFETY.md), [wyniki i procedura testowania](TESTING.md).
 
@@ -48,3 +48,6 @@ SmoothQuit obsługuje polski i angielski. Aby wybrać angielski tylko dla tej ap
 
 
 Wersja 1.5.0 jest zwykłym wydaniem GitHub Release. Nadal ma lokalny podpis ad hoc i nie jest notaryzowana przez Apple. Pauza pokazuje pozostały czas w otwartym menu oraz ustawieniach, a Disable jest bezterminowe. Nowe ustawienia obejmują wyszukiwane reguły, edytor per-app i czytelną aktywność oddzieloną od diagnostyki. Istniejącą instalację zastępuje sam użytkownik.
+
+
+Wersja 1.6.0 pokazuje numer wersji w stopce i natywne About z numerem kompilacji. Uaktualnienia są sprawdzane ręcznie lub jednorazowo przy uruchomieniu (domyślnie włączone, można wyłączyć). Sprawdzanie wysyła anonimowe żądanie HTTPS do publicznego API wydań GitHub. Nowa stabilna wersja może wywołać lokalne powiadomienie po zgodzie macOS; aplikacja niczego nie instaluje automatycznie. Reguły, okna i raporty nie są wysyłane. Po zamknięciu ustawień aplikacja oddaje aktywność; monitor nadal pracuje w tle.

@@ -103,3 +103,28 @@ The compositor test measures full turns in both directions, rapid changes and ce
 UI smoke checks covered the packaged app's three panes, pause/resume, indefinite Disable, app search and selection, a disposable TextEdit rule, per-app delay formatting and rule removal. TextEdit itself was not launched. The temporary rule was removed and the original settings were restored. The packaged app required a new Accessibility grant, so this release does not claim a new target-app Quit test. The installed Applications copy was not replaced. Light/dark regular and compact renders remain fixtures, not proof of a complete VoiceOver or multi-display audit.
 
 Final local validation on 2026-10-20: **52 passed, 4 interactive tests skipped, 0 failures out of 56** in the ordinary suite. The two opt-in native UI tests passed separately: +360° / −360° and rapid turns with **0.0 pt center drift**, and the open menu displayed **0:03 → 0:02 → 0:01**, then the finished state. One earlier tracking attempt dismissed the menu after 1.36 seconds before expiry; the fixture now activates its own test application before tracking, and the focused reruns passed. The compiler emitted its x86_64/SDK 27 deprecation warning; the verified final binary retains a macOS 14 minimum deployment target for both architectures.
+
+
+## Version, updates and menu ownership — 1.6.0
+
+The update checker is tested with a URLProtocol fixture: no ordinary test calls GitHub or requests notification permission. Tests cover numeric version comparison (including 1.10 versus 1.9), equal/older releases, draft/prerelease and malformed metadata, mismatched or external release URLs, HTTP/rate-limit failures, manual checks with launch checks disabled, duplicate in-flight checks and suppressing automatic result delivery after opt-out. Additional tests cover per-attempt activity correlation, quick Never rules preserving mode/custom delays and bounded diagnostic reports.
+
+Real production-Monitor tests on 2026-10-20, configured delay 0.5 seconds:
+
+| App | Scenario | Result |
+| --- | --- | --- |
+| Calendar | Cold launch recovered from transient AX subscription errors; last normal window closed | Quit at 0.584 s; exit at 0.623 s |
+| Mail | Main window closed, without selecting or sending messages | Quit at 0.590 s; exit at 1.127 s |
+| Preview | Opened and closed only a generated disposable PDF while another document remained | Quit vetoed at 0.528 s; existing document and process preserved |
+
+The first Preview test attempt failed its setup assertion because AX returned an empty list, then timed out. No Quit was sent. A separate read-only probe later saw the windows, and the repeated production test observed two normal windows, then one, and passed. The fixture now skips before monitoring if it cannot establish the required existing window. This documents an intermittent AX visibility limitation; the engine never treats an empty initial list as a close event.
+
+The live native UI checks retain full-turn/pivot and menu-tracking coverage. The settings-window fixture also verifies that closing hides the utility, relinquishes active state and reopening shows the same window without stopping its model. macOS can decline programmatic activation for an unbundled XCTest process: the first fixture incorrectly assumed activation was guaranteed, and a filtered invocation initially omitted NSApplication bootstrap. Those fixture assumptions were corrected; the passing close/reopen check recorded activeBefore=false. It is not evidence that a CLI process can forcibly activate itself. Packaged UI checks remain necessary for human-driven menu ownership.
+
+The packaged app showed version 1.6.0 (build 9), About/project/license links, and completed a real manual GitHub check with “No newer release is available.” A first launch check hit a connection error, displayed it without claiming to be current, and a later check succeeded. No newer public release existed during testing, so an actual system update banner/authorization prompt was not exercised; newer-version routing uses deterministic tests, and macOS notification delivery remains subject to user permission and Focus.
+
+The new package still needs its own Accessibility grant after ad hoc signing. Target-app results above are from the authorized XCTest host running production Monitor, not a claimed end-to-end Quit from the final .app. Full Spaces/multi-display/fullscreen and login/reboot coverage is still incomplete.
+
+The final ordinary suite contains **65 tests: 59 passed, 6 interactive tests skipped, 0 failures**. The six skipped cases are the three native UI tests, the TextEdit Quit test, the selectable Mail/Preview/Calendar Quit test and the Preview keep-existing-window fixture. Interactive checks above were run separately. None of the ordinary tests launches target apps, calls GitHub or requests notification access.
+
+A final combined native UI rerun again measured complete icon turns and passed hide/reopen, but its popup was dismissed before the expiry observation. The tracking fixture now marks such an interrupted run inconclusive instead of treating a premature dismissal as a timer failure; a menu held for its full observation interval must still satisfy the countdown/expiry assertions. Earlier uninterrupted 1.6 tracking execution passed with 0:03 → 0:02 → 0:01 and completion.

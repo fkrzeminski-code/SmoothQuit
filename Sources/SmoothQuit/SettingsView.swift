@@ -57,6 +57,9 @@ struct SettingsView: View {
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             HStack {
+                Button(AppVersion.display) { model.onAbout?() }
+                    .buttonStyle(.plain).foregroundStyle(.secondary).font(.callout)
+                    .help(L("About SmoothQuit"))
                 Spacer()
                 Button(L("Quit SmoothQuit")) { NSApp.terminate(nil) }
                     .help(L("Quits SmoothQuit and stops observing apps."))
@@ -147,6 +150,9 @@ struct SettingsView: View {
                     Button(L("Approve login item in System Settings…")) { SMAppService.openSystemSettingsLoginItems() }
                 }
             } header: { Text(L("Visibility and startup")) }
+            Section {
+                UpdateSettingsView(updates: model.updates)
+            } header: { Text(L("Updates")) }
             Section {
                 DisclosureGroup(L("Advanced"), isExpanded: $advanced) {
                     Toggle(L("Monitor hidden apps"), isOn: $model.preferences.monitorHidden)
@@ -393,12 +399,11 @@ struct ActivityView: View {
     @State private var activityMode = 0
     @State private var query = ""
     @State private var snapshot: [Diagnostic] = []
+    @State private var showInspection = false
     private var rawDiagnostics: Bool { activityMode == 2 }
     private var entries: [Diagnostic] {
-        snapshot.filter {
-            (rawDiagnostics || $0.summary != nil || $0.requested || $0.completed) &&
-            (activityMode != 1 || $0.requested || $0.completed) &&
-            (query.isEmpty || model.name(for: $0.bundleID).localizedCaseInsensitiveContains(query) || $0.bundleID.localizedCaseInsensitiveContains(query))
+        (rawDiagnostics ? snapshot : Diagnostic.activityEntries(snapshot, historyOnly: activityMode == 1)).filter {
+            query.isEmpty || model.name(for: $0.bundleID).localizedCaseInsensitiveContains(query) || $0.bundleID.localizedCaseInsensitiveContains(query)
         }
     }
     private var newCount: Int {
@@ -418,6 +423,14 @@ struct ActivityView: View {
                 Button(L("Clear")) { model.diagnostics.removeAll(); snapshot = [] }.disabled(model.diagnostics.isEmpty)
             }
             TextField(L("Filter by app"), text: $query).textFieldStyle(.roundedBorder)
+            HStack {
+                Button(L("Why Is This App Still Running?")) { showInspection = true }
+                Spacer()
+                Button(L("Copy Diagnostic Report")) {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(model.diagnosticReport(entries: entries), forType: .string)
+                }.help(L("Includes version, macOS, rules and up to 20 displayed events. Nothing is sent automatically."))
+            }
             if newCount > 0 {
                 Button(L("Show %d New Events", newCount)) { snapshot = model.diagnostics }
                     .help(L("Updates wait here so the list does not move while you read."))
@@ -437,6 +450,14 @@ struct ActivityView: View {
                         }
                         if let elapsed = entry.elapsed {
                             Text(L("Measured time: %.3f s", elapsed)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        }
+                        if !rawDiagnostics, entry.completed, let quitID = entry.quitID,
+                           let request = snapshot.first(where: { $0.requested && $0.quitID == quitID }) {
+                            DisclosureGroup(L("Quit Details")) {
+                                Text(request.message).font(.callout).textSelection(.enabled)
+                                if let elapsed = request.elapsed { Text(L("Quit requested after %.3f s", elapsed)).font(.callout.monospacedDigit()) }
+                                Text(entry.message).font(.callout).textSelection(.enabled)
+                            }
                         }
                     }
                 }.padding(.vertical, 5)
@@ -459,9 +480,99 @@ struct ActivityView: View {
             Text(L("Session only. A Quit request is not a confirmed exit. No window titles or document contents are recorded."))
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.padding(20)
+            .sheet(isPresented: $showInspection) { InspectionView(model: model) }
             .onAppear { snapshot = model.diagnostics }
             .onChange(of: model.diagnostics.first?.id) { _, _ in
                 if snapshot.isEmpty { snapshot = model.diagnostics }
             }
+    }
+}
+
+struct UpdateSettingsView: View {
+    @ObservedObject var updates: UpdateChecker
+    var showAutomaticToggle = true
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if showAutomaticToggle {
+                Toggle(L("Check for updates at launch"), isOn: $updates.automaticallyChecks)
+            }
+            HStack {
+                Button(L("Check for Updates…")) { updates.check() }.disabled(updates.isChecking)
+                if updates.isChecking { ProgressView().controlSize(.small) }
+                if updates.availableRelease != nil { Button(L("View Release…")) { updates.openRelease() } }
+            }
+            Text(updates.phase.message).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let hint = updates.notificationHint {
+                Text(hint).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+struct AboutView: View {
+    @ObservedObject var updates: UpdateChecker
+    let close: () -> Void
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(spacing: 12) {
+                    Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 72, height: 72).accessibilityHidden(true)
+                    Text("SmoothQuit").font(.title2.bold())
+                    Text(L("Version %@ (Build %@)", AppVersion.number, AppVersion.build)).foregroundStyle(.secondary).textSelection(.enabled)
+                    Text(L("Close the last window. Let the app leave quietly."))
+                        .multilineTextAlignment(.center)
+                    HStack {
+                        Link("GitHub", destination: AppVersion.repository)
+                        Text("·").foregroundStyle(.secondary)
+                        Link(L("MIT License"), destination: AppVersion.repository.appendingPathComponent("blob/main/LICENSE"))
+                    }
+                    Divider().padding(.vertical, 4)
+                    UpdateSettingsView(updates: updates, showAutomaticToggle: false)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }.padding(24)
+            }
+            HStack {
+                Spacer()
+                Button(L("Done"), action: close).keyboardShortcut(.defaultAction)
+            }.padding(16)
+        }.frame(width: 460, height: 440).background(Color(nsColor: .windowBackgroundColor))
+            .onExitCommand(perform: close)
+    }
+}
+
+struct InspectionView: View {
+    @ObservedObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var apps: [NSRunningApplication] = []
+    @State private var selection: pid_t = 0
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(L("Why Is This App Still Running?")).font(.headline)
+            Picker(L("Application"), selection: $selection) {
+                Text(L("Choose an app")).tag(pid_t(0))
+                ForEach(apps, id: \.processIdentifier) { app in
+                    Text((app.localizedName ?? app.bundleIdentifier ?? "—") + (apps.filter { $0.bundleIdentifier == app.bundleIdentifier }.count > 1 ? " (\(app.processIdentifier))" : ""))
+                        .tag(app.processIdentifier)
+                }
+            }.disabled(model.isInspecting)
+            Text(model.inspection.isEmpty ? L("Choose a running app to read its current state. This never sends Quit.") : model.inspection)
+                .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            if model.isInspecting { ProgressView().controlSize(.small) }
+            Spacer(minLength: 0)
+            HStack {
+                Button(L("Check Again")) { model.inspect(selection) }.disabled(selection == 0 || model.isInspecting)
+                Spacer()
+                Button(L("Done")) { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+        }.padding(24).frame(width: 500, height: 280)
+            .onAppear {
+                model.inspection = ""
+                apps = NSWorkspace.shared.runningApplications.filter {
+                    $0.activationPolicy == .regular && $0.bundleIdentifier != nil && $0.bundleIdentifier != "pl.smoothquit.app"
+                }.sorted { ($0.localizedName ?? "").localizedStandardCompare($1.localizedName ?? "") == .orderedAscending }
+            }
+            .onChange(of: selection) { _, pid in if pid > 0 { model.inspect(pid) } }
+            .onExitCommand { dismiss() }
     }
 }
