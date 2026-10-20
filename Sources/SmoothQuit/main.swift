@@ -116,7 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         menu.addItem(.separator())
         if let app = lastExternalApp, !app.isTerminated, let id = app.bundleIdentifier {
-            let item = NSMenuItem(title: L("Keep %@ Running", app.localizedName ?? id), action: #selector(keepLastAppRunning), keyEquivalent: "")
+            let item = NSMenuItem(title: L("Never Auto-Quit %@", app.localizedName ?? id), action: #selector(keepLastAppRunning), keyEquivalent: "")
             item.target = self; item.representedObject = app
             item.isEnabled = model.preferences.rules.first(where: { $0.id == id })?.behavior != .never
             menu.addItem(item)
@@ -186,6 +186,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         return newWindow
     }
     @objc func showSettings() {
+        // Accessory apps cannot own a menu bar. Use normal AppKit activation
+        // while Settings is open; return to background-only operation on close.
+        NSApp.setActivationPolicy(.regular)
         let window = makeSettingsWindow()
         NSApp.unhideWithoutActivation()
         window.makeKeyAndOrderFront(nil)
@@ -198,6 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         if let aboutWindow, closing.attachedSheet === aboutWindow { closing.endSheet(aboutWindow) }
         // AppKit restores the previous foreground app and its menu. Monitoring continues.
         if closing.isVisible { NSApp.hide(nil) }
+        NSApp.setActivationPolicy(.accessory)
     }
     func validateMenuItem(_ item: NSMenuItem) -> Bool {
         if item.action == #selector(toggleEnabled) {

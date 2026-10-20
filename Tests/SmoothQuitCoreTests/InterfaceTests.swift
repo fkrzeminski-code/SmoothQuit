@@ -259,6 +259,7 @@ final class InterfaceTests: XCTestCase {
         NSApp.setActivationPolicy(.accessory)
         delegate.showSettings()
         let window = try XCTUnwrap(delegate.window)
+        XCTAssertEqual(NSApp.activationPolicy(), .regular)
         RunLoop.main.run(until: Date().addingTimeInterval(0.2))
         let wasActive = NSApp.isActive
         XCTAssertTrue(window.delegate === delegate)
@@ -266,11 +267,14 @@ final class InterfaceTests: XCTestCase {
         RunLoop.main.run(until: Date().addingTimeInterval(0.2))
         XCTAssertFalse(window.isVisible)
         XCTAssertFalse(NSApp.isActive)
-        XCTAssertTrue(NSApp.isHidden)
+        // Changing to accessory can clear isHidden; no visible window and no
+        // foreground ownership are the actual background-mode contract.
+        XCTAssertEqual(NSApp.activationPolicy(), .accessory)
         XCTAssertFalse(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
         delegate.showSettings()
         RunLoop.main.run(until: Date().addingTimeInterval(0.2))
         XCTAssertTrue(window.isVisible); XCTAssertFalse(NSApp.isHidden)
+        XCTAssertEqual(NSApp.activationPolicy(), .regular)
         print("Settings close: activeBefore=\(wasActive); hidden after close; same window reopened. macOS may decline XCTest activation without a user event.")
         window.performClose(nil)
         window.contentViewController = nil

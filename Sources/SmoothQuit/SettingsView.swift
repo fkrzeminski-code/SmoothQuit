@@ -154,12 +154,21 @@ struct SettingsView: View {
                 UpdateSettingsView(updates: model.updates)
             } header: { Text(L("Updates")) }
             Section {
-                DisclosureGroup(L("Advanced"), isExpanded: $advanced) {
+                DisclosureGroup(isExpanded: $advanced) {
                     Toggle(L("Monitor hidden apps"), isOn: $model.preferences.monitorHidden)
                     Toggle(L("Monitor apps with minimized windows"), isOn: $model.preferences.monitorMinimized)
                     Text(L("Any existing window, including one on another Space, always prevents Quit. Turning these options off also suspends monitoring in that state."))
                         .font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                } label: {
+                    Button { advanced.toggle() } label: {
+                        HStack { Text(L("Advanced")); Spacer(minLength: 0) }
+                            .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("advancedDisclosureLabel")
+                    .accessibilityValue(advanced ? L("Expanded") : L("Collapsed"))
                 }
                 if model.trusted {
                     Label(L("Accessibility granted"), systemImage: "checkmark.shield")

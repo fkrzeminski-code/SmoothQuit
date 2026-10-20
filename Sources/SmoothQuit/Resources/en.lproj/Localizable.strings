@@ -198,7 +198,7 @@
 "GitHub returned an unexpected response. Try again later." = "GitHub returned an unexpected response. Try again later.";
 "GitHub returned invalid release information. No update was opened." = "GitHub returned invalid release information. No update was opened.";
 "Includes version, macOS, rules and up to 20 displayed events. Nothing is sent automatically." = "Includes version, macOS, rules and up to 20 displayed events. Nothing is sent automatically.";
-"Keep %@ Running" = "Keep %@ Running";
+"Never Auto-Quit %@" = "Never Auto-Quit %@";
 "Kept running: %d normal, %d auxiliary, %d minimized windows." = "Kept running: %d normal, %d auxiliary, %d minimized windows.";
 "Kept running: WindowServer still reports a window or an uncertain state." = "Kept running: WindowServer still reports a window or an uncertain state.";
 "Kept running: a remembered window has not confirmed its closure, possibly on another Space." = "Kept running: a remembered window has not confirmed its closure, possibly on another Space.";
@@ -224,3 +224,6 @@
 "View Release…" = "View Release…";
 "Waiting for Accessibility observation to become ready." = "Waiting for Accessibility observation to become ready.";
 "Why Is This App Still Running?" = "Why Is This App Still Running?";
+
+"Expanded" = "Expanded";
+"Collapsed" = "Collapsed";

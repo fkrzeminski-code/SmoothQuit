@@ -198,7 +198,7 @@
 "GitHub returned an unexpected response. Try again later." = "GitHub zwrócił nieoczekiwaną odpowiedź. Spróbuj później.";
 "GitHub returned invalid release information. No update was opened." = "GitHub zwrócił nieprawidłowe informacje o wydaniu. Nie otwarto uaktualnienia.";
 "Includes version, macOS, rules and up to 20 displayed events. Nothing is sent automatically." = "Zawiera wersję, macOS, reguły i do 20 widocznych zdarzeń. Nic nie jest wysyłane automatycznie.";
-"Keep %@ Running" = "Pozostaw %@ uruchomioną";
+"Never Auto-Quit %@" = "Nigdy nie zamykaj automatycznie %@";
 "Kept running: %d normal, %d auxiliary, %d minimized windows." = "Pozostaje uruchomiona: %d normalnych, %d pomocniczych i %d zminimalizowanych okien.";
 "Kept running: WindowServer still reports a window or an uncertain state." = "Pozostaje uruchomiona: WindowServer nadal zgłasza okno lub niepewny stan.";
 "Kept running: a remembered window has not confirmed its closure, possibly on another Space." = "Pozostaje uruchomiona: nie potwierdzono zamknięcia zapamiętanego okna, być może na innym biurku.";
@@ -224,3 +224,6 @@
 "View Release…" = "Zobacz wydanie…";
 "Waiting for Accessibility observation to become ready." = "Oczekiwanie na gotowość obserwacji Dostępności.";
 "Why Is This App Still Running?" = "Dlaczego ta aplikacja nadal działa?";
+
+"Expanded" = "Rozwinięte";
+"Collapsed" = "Zwinięte";
