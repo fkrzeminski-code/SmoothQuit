@@ -17,18 +17,27 @@ enum Brand {
         context.addPath(orbit); context.addPath(dot); context.fillPath()
         context.restoreGState()
     }
-    static func image(size: CGFloat = 18, active: Bool = true) -> NSImage {
+    static func image(size: CGFloat = 18, state: MonitoringState = .active) -> NSImage {
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
             context.saveGState()
             context.scaleBy(x: rect.width / 100, y: rect.height / 100)
             context.setFillColor(NSColor.black.cgColor)
             context.addPath(orbit)
-            if active { context.addPath(dot) }
-            else {
-                // Pause bars replace the dot: state is readable without color or motion.
+            switch state {
+            case .active: context.addPath(dot)
+            case .paused:
                 context.addRect(CGRect(x: 65, y: 20, width: 5, height: 15))
                 context.addRect(CGRect(x: 74, y: 20, width: 5, height: 15))
+            case .disabled:
+                // A hollow marker distinguishes Off from Pause without lowering contrast.
+                context.addPath(dot.copy(strokingWithWidth: 4, lineCap: .round, lineJoin: .round, miterLimit: 1))
+            case .needsAccess:
+                context.addRect(CGRect(x: 70, y: 27, width: 5, height: 12))
+                context.addEllipse(in: CGRect(x: 70, y: 19, width: 5, height: 5))
+            case .needsApps:
+                context.addRect(CGRect(x: 65, y: 26, width: 17, height: 5))
+                context.addRect(CGRect(x: 71, y: 20, width: 5, height: 17))
             }
             context.fillPath()
             context.restoreGState()

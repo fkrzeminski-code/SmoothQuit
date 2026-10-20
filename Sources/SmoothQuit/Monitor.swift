@@ -10,6 +10,12 @@ struct Diagnostic: Identifiable {
     var requested = false
     var completed = false
     var elapsed: Double?
+    var summary: String?
+    var activityMessage: String {
+        if completed { return L("Exited after a normal Quit request") }
+        if requested { return L("Quit requested — waiting for the app to exit") }
+        return summary ?? message
+    }
 }
 
 // ponytail: one serial queue owns all AX state; the main run loop only forwards events.
@@ -202,8 +208,8 @@ final class Monitor {
         fence.invalidate()
         queue.async { self.removeAll(); self.reconcile() }
     }
-    private func emit(_ id: String, _ message: String, elapsed: Double? = nil, requested: Bool = false, completed: Bool = false) {
-        let entry = Diagnostic(bundleID: id, message: message, requested: requested, completed: completed, elapsed: elapsed)
+    private func emit(_ id: String, _ message: String, elapsed: Double? = nil, requested: Bool = false, completed: Bool = false, summary: String? = nil) {
+        let entry = Diagnostic(bundleID: id, message: message, requested: requested, completed: completed, elapsed: elapsed, summary: summary)
         DispatchQueue.main.async { self.onDiagnostic?(entry) }
     }
     private func remove(_ pid: pid_t) {
@@ -223,8 +229,8 @@ final class Monitor {
         launchObservations.removeAll()
         for pid in Array(watches.keys) { remove(pid) }
     }
-    private func cancel(_ watch: Watch, reason: String) {
-        if watch.gate.pending != nil { emit(watch.app.bundleIdentifier ?? "", reason) }
+    private func cancel(_ watch: Watch, reason: String, log: Bool = true) {
+        if log && watch.gate.pending != nil { emit(watch.app.bundleIdentifier ?? "", reason, summary: reason) }
         watch.timer?.cancel(); watch.timer = nil; watch.gate.cancel()
     }
     private func workspaceEvent(_ name: Notification.Name, app: NSRunningApplication?) {
@@ -417,7 +423,8 @@ final class Monitor {
         } catch {
             watch.readWasTransient = (error as? WindowReadError)?.isTransient == true
             cancel(watch, reason: L("Cancelled: uncertain window read"))
-            emit(watch.app.bundleIdentifier ?? "", L("Quit blocked. %@", String(describing: error)), elapsed: now - started)
+            emit(watch.app.bundleIdentifier ?? "", L("Quit blocked. %@", String(describing: error)), elapsed: now - started,
+                 summary: L("Kept running: window state could not be confirmed"))
             return nil
         }
     }
@@ -468,9 +475,9 @@ final class Monitor {
         let id = watch.app.bundleIdentifier ?? ""
         let started = now
         let lateness = max(0, started - pending.deadline)
-        func block(_ reason: String) {
-            cancel(watch, reason: reason)
-            emit(id, reason, elapsed: now - pending.closedAt)
+        func block(_ reason: String, summary: String? = nil) {
+            cancel(watch, reason: reason, log: false)
+            emit(id, reason, elapsed: now - pending.closedAt, summary: summary ?? L("Kept running: window state could not be confirmed"))
         }
         guard fence.snapshot(pid: watch.app.processIdentifier) == revision else { block(L("Quit cancelled: a new event arrived during the countdown")); return }
         guard lateness < 0.5 else { block(L("Quit cancelled: worker queue delayed by more than 500 ms")); return }
@@ -479,13 +486,13 @@ final class Monitor {
               NSRunningApplication(processIdentifier: watch.app.processIdentifier) == watch.app else {
             block(L("Quit blocked: permissions, rules or process identity changed")); return
         }
-        guard preferences.monitorHidden || !watch.app.isHidden else { block(L("Quit blocked: app is hidden")); return }
+        guard preferences.monitorHidden || !watch.app.isHidden else { block(L("Quit blocked: app is hidden"), summary: L("Kept running: the app is hidden")); return }
         guard let snapshot = read(watch) else { return }
         if !preferences.monitorMinimized && snapshot.contains(where: \.minimized) {
-            block(L("Quit blocked: minimized-window monitoring is disabled")); return
+            block(L("Quit blocked: minimized-window monitoring is disabled"), summary: L("Kept running: a minimized window remains")); return
         }
         guard snapshot.isEmpty && watch.gate.windows.isEmpty else {
-            block(L("Quit blocked: a normal, auxiliary or unconfirmed off-Space window remains")); return
+            block(L("Quit blocked: a normal, auxiliary or unconfirmed off-Space window remains"), summary: L("Kept running: an open or remembered window remains")); return
         }
         let cg = WindowReader.cgHasWindows(pid: watch.app.processIdentifier)
         guard watch.gate.canQuit(token: pending.token, now: now, snapshot: snapshot, cgHasWindows: cg,
@@ -504,6 +511,6 @@ final class Monitor {
         if sent {
             watch.closeAt = pending.closedAt; watch.requestedAt = now
             emit(id, L("Normal Quit requested. Read %.0f ms; queue +%.0f ms. Waiting for process exit.", (now - started) * 1000, lateness * 1000), elapsed: now - pending.closedAt, requested: true)
-        } else { emit(id, L("The system did not accept the Quit request"), elapsed: now - pending.closedAt) }
+        } else { emit(id, L("The system did not accept the Quit request"), elapsed: now - pending.closedAt, summary: L("The system did not accept the Quit request")) }
     }
 }

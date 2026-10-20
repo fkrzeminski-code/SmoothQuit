@@ -9,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
     private let statusIcon = StatusIconView(frame: NSRect(x: 0, y: 0, width: 18, height: 18))
     private(set) var window: NSWindow?
     private var becameActive: NSObjectProtocol?
+    private var accessibilityOptions: NSObjectProtocol?
+    private var menuTimer: Timer?
+    private weak var countdownItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // LaunchServices normally reuses this process (Spotlight/Finder/open).
@@ -36,11 +39,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         statusItem.menu = NSMenu(); statusItem.menu?.delegate = self
         // Never use .terminationOnRemoval: hiding the item is purely visual.
         statusItem.behavior = []
-        model.onChange = { [weak self] in self?.updateStatusItem() }
+        model.onChange = { [weak self] animated in self?.updateStatusItem(animated: animated) }
         updateStatusItem()
         model.start()
         becameActive = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
             self?.model.checkPermission()
+        }
+        accessibilityOptions = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.updateStatusItem()
         }
         if Self.shouldShowSettings(onLaunch: NSAppleEventManager.shared().currentAppleEvent) { showSettings() }
     }
@@ -52,19 +58,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         showSettings(); return true
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
-    private func updateStatusItem() {
+    private func updateStatusItem(animated: Bool = false) {
         statusItem?.isVisible = model.showInMenuBar
         statusItem?.button?.toolTip = "SmoothQuit — \(model.status)"
         statusItem?.button?.setAccessibilityLabel("SmoothQuit — \(model.status)")
-        statusIcon.update(active: model.isMonitoring, animated: statusItem?.isVisible == true)
+        statusIcon.update(state: model.monitoringState, animated: animated && statusItem?.isVisible == true)
     }
     func menuWillOpen(_ menu: NSMenu) {
+        menuTimer?.invalidate(); menuTimer = nil
         menu.removeAllItems()
         let status = menu.addItem(withTitle: model.status, action: nil, keyEquivalent: ""); status.isEnabled = false
+        if let remaining = model.pauseRemaining() {
+            let item = menu.addItem(withTitle: remaining, action: nil, keyEquivalent: "")
+            item.isEnabled = false; countdownItem = item
+            let timer = Timer(timeInterval: 1, repeats: true) { [weak self, weak menu] _ in
+                guard let self else { return }
+                self.countdownItem?.title = self.model.pauseRemaining() ?? L("Pause finished")
+                if self.model.pauseRemaining() == nil {
+                    status.title = self.model.status
+                    menu?.items.first(where: { $0.action == #selector(self.resume) })?.isEnabled = false
+                    self.menuTimer?.invalidate(); self.menuTimer = nil
+                }
+            }
+            menuTimer = timer; RunLoop.main.add(timer, forMode: .common)
+        }
+        if model.monitoringState == .needsAccess {
+            add(menu, L("Grant access…"), #selector(openAccessibility))
+        } else if model.monitoringState == .needsApps {
+            add(menu, L("Choose Apps…"), #selector(chooseApps))
+        }
         menu.addItem(.separator())
         add(menu, model.preferences.enabled ? L("Disable SmoothQuit") : L("Enable SmoothQuit"), #selector(toggleEnabled))
-        if model.preferences.isPaused { add(menu, L("Resume"), #selector(resume)) }
-        else {
+        if model.preferences.enabled && model.preferences.isPaused { add(menu, L("Resume"), #selector(resume)) }
+        else if model.preferences.enabled {
             let pause = NSMenuItem(title: L("Pause"), action: nil, keyEquivalent: "")
             let submenu = NSMenu()
             for minutes in [5, 15, 30, 60] {
@@ -76,6 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         menu.addItem(.separator())
         add(menu, L("Settings…"), #selector(showSettings), key: ",")
         add(menu, L("Quit SmoothQuit"), #selector(quit), key: "q")
+    }
+    func menuDidClose(_ menu: NSMenu) {
+        menuTimer?.invalidate(); menuTimer = nil; countdownItem = nil
     }
     private func add(_ menu: NSMenu, _ title: String, _ action: Selector, key: String = "") {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: key); item.target = self; menu.addItem(item)
@@ -95,6 +124,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         let editRoot = NSMenuItem(); let edit = NSMenu(title: L("Edit")); editRoot.submenu = edit; bar.addItem(editRoot)
         for (title, action, key) in [(L("Undo"), Selector(("undo:")), "z"), (L("Cut"), #selector(NSText.cut(_:)), "x"), (L("Copy"), #selector(NSText.copy(_:)), "c"), (L("Paste"), #selector(NSText.paste(_:)), "v"), (L("Select All"), #selector(NSText.selectAll(_:)), "a")] {
             edit.addItem(withTitle: title, action: action, keyEquivalent: key)
+            if key == "z" {
+                let redo = edit.addItem(withTitle: L("Redo"), action: Selector(("redo:")), keyEquivalent: "z")
+                redo.keyEquivalentModifierMask = [.command, .shift]
+                edit.addItem(.separator())
+            }
         }
         let viewRoot = NSMenuItem(); let viewMenu = NSMenu(title: L("View"))
         viewRoot.submenu = viewMenu; bar.addItem(viewRoot)
@@ -117,8 +151,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         newWindow.collectionBehavior = [.fullScreenNone]
         newWindow.standardWindowButton(.zoomButton)?.isEnabled = false
         newWindow.toolbarStyle = .preference
+        if !newWindow.setFrameUsingName("SmoothQuitSettings") { newWindow.center() }
         newWindow.setFrameAutosaveName("SmoothQuitSettings")
-        newWindow.center(); window = newWindow
+        window = newWindow
         tabs.updateWindowTitle()
         return newWindow
     }
@@ -141,7 +176,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenu
         (window?.contentViewController as? SettingsTabs)?.selectedTabViewItemIndex = sender.tag
     }
     @objc private func toggleMenuBar() { model.showInMenuBar.toggle() }
-    @objc private func toggleEnabled() { model.preferences.enabled.toggle() }
+    @objc private func toggleEnabled() { model.setEnabled(!model.preferences.enabled) }
+    @objc private func openAccessibility() { model.requestAccessibility() }
+    @objc private func chooseApps() {
+        showSettings(); (window?.contentViewController as? SettingsTabs)?.selectedTabViewItemIndex = 1
+    }
     @objc private func resume() { model.pause(minutes: nil) }
     @objc private func pause(_ sender: NSMenuItem) { model.pause(minutes: sender.tag) }
     @objc private func about() { NSApp.orderFrontStandardAboutPanel(nil); NSApp.activate(ignoringOtherApps: true) }

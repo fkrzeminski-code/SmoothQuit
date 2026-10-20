@@ -2,7 +2,7 @@
 set -euo pipefail
 PROJECT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$PROJECT/Info.plist")"
-OUT="${1:-$PROJECT/Builds/Preview-$VERSION}"
+OUT="${1:-$PROJECT/Builds/Release-$VERSION}"
 mkdir -p "$OUT/Reports"
 OUT="$(cd "$OUT" && pwd)"
 if [[ "$OUT" == "$PROJECT" || ( "$OUT" == "$PROJECT/"* && "$OUT" != "$PROJECT/Builds/"* ) ]]; then

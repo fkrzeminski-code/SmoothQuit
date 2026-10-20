@@ -40,8 +40,11 @@ swift test
 ./scripts/build.sh
 ```
 
-Kod, dokumentacja, zasoby i buildy mieszczą się w jednym folderze projektu. Wyniki kompilacji trafiają do `Builds/Preview-1.4.1/` i nie są dodawane do Git. Wymagany pełny Xcode; wydanie sprawdzono z Xcode 27.1. Minimalny cel systemowy to macOS 14, bieżąca kontrola wyglądu obejmuje macOS 27.
+Kod, dokumentacja, zasoby i buildy mieszczą się w jednym folderze projektu. Wyniki kompilacji trafiają do `Builds/Release-1.5.0/` i nie są dodawane do Git. Wymagany pełny Xcode; wydanie sprawdzono z Xcode 27.1. Minimalny cel systemowy to macOS 14, bieżąca kontrola wyglądu obejmuje macOS 27.
 
 ## Język
 
 SmoothQuit obsługuje polski i angielski. Aby wybrać angielski tylko dla tej aplikacji, przejdź do Ustawienia systemowe → Ogólne → Język i region → Aplikacje, dodaj SmoothQuit i wybierz English. Uruchom aplikację ponownie.
+
+
+Wersja 1.5.0 jest zwykłym wydaniem GitHub Release. Nadal ma lokalny podpis ad hoc i nie jest notaryzowana przez Apple. Pauza pokazuje pozostały czas w otwartym menu oraz ustawieniach, a Disable jest bezterminowe. Nowe ustawienia obejmują wyszukiwane reguły, edytor per-app i czytelną aktywność oddzieloną od diagnostyki. Istniejącą instalację zastępuje sam użytkownik.

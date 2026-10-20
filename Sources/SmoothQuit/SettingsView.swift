@@ -43,6 +43,8 @@ final class SettingsTabs: NSTabViewController {
 
 struct SettingsView: View {
     @ObservedObject var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var advanced = false
     var pane = 0
     var body: some View {
         VStack(spacing: 0) {
@@ -55,8 +57,6 @@ struct SettingsView: View {
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider()
             HStack {
-                Text(L("Changes are saved automatically."))
-                    .font(.callout).foregroundStyle(.secondary)
                 Spacer()
                 Button(L("Quit SmoothQuit")) { NSApp.terminate(nil) }
                     .help(L("Quits SmoothQuit and stops observing apps."))
@@ -71,14 +71,15 @@ struct SettingsView: View {
     private var general: some View {
         Form {
             Section {
-                Toggle(isOn: $model.preferences.enabled) {
+                Toggle(isOn: Binding(get: { model.preferences.enabled }, set: model.setEnabled)) {
                     HStack(spacing: 12) {
-                        Image(nsImage: Brand.image(size: 36))
+                        Image(nsImage: Brand.image(size: 36, state: model.monitoringState))
                             .foregroundStyle(.tint).accessibilityHidden(true)
                         VStack(alignment: .leading, spacing: 3) {
                             Text(L("Enable SmoothQuit")).fontWeight(.medium)
                             Text(model.status).font(.callout).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
+                                .transaction { $0.animation = nil }
                         }
                     }
                 }.toggleStyle(.switch)
@@ -86,8 +87,17 @@ struct SettingsView: View {
                     .help(L("Disabling cancels pending Quit requests. SmoothQuit keeps running."))
             }
             if !model.trusted { permissions }
+            if model.monitoringState == .needsApps {
+                Section {
+                    HStack {
+                        Text(L("An empty Include list never quits any apps.")).foregroundStyle(.secondary)
+                        Spacer()
+                        Button(L("Choose Apps…")) { chooseApps() }
+                    }
+                }
+            }
             Section {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .center) {
                         Text(L("Quit delay"))
                         Spacer()
@@ -98,7 +108,7 @@ struct SettingsView: View {
                         Text(L("Quit delay"))
                     } minimumValueLabel: { Text(L("0.2 s")) } maximumValueLabel: { Text("2 s") }
                     .labelsHidden().accessibilityLabel(L("Quit delay"))
-                    Text(L("After the last window closes. A new window cancels the countdown; macOS handles the animation."))
+                    Text(L("A new window cancels the countdown. Window animations stay native."))
                         .font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }.padding(.vertical, 4)
@@ -107,8 +117,10 @@ struct SettingsView: View {
                 HStack {
                     Label(L("Pause automatic Quit"), systemImage: "pause.circle")
                     Spacer()
-                    if model.preferences.isPaused, let until = model.preferences.pauseUntil {
-                        Text(L("Until %@", until.formatted(date: .omitted, time: .shortened))).foregroundStyle(.secondary)
+                    if model.preferences.enabled, model.preferences.isPaused, let until = model.preferences.pauseUntil {
+                        Text(until, style: .timer).monospacedDigit().foregroundStyle(.secondary)
+                            .accessibilityLabel(L("Time remaining"))
+                            .accessibilityValue(Text(until, style: .timer))
                         Button(L("Resume now")) { model.pause(minutes: nil) }
                     } else {
                         Menu(L("Pause…")) {
@@ -117,26 +129,17 @@ struct SettingsView: View {
                             }
                         }.fixedSize()
                     }
-                }
-                DisclosureGroup(L("Hidden and minimized windows")) {
-                    Toggle(L("Monitor hidden apps"), isOn: $model.preferences.monitorHidden)
-                    Toggle(L("Monitor apps with minimized windows"), isOn: $model.preferences.monitorMinimized)
-                    Text(L("Any existing window, including one on another Space, always prevents Quit. Turning these options off also suspends monitoring in that state."))
-                        .font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                }.disabled(!model.preferences.enabled)
             } header: { Text(L("Automation")) }
             Section {
                 Toggle(isOn: $model.showInMenuBar) {
-                    preferenceLabel(L("Show in Menu Bar"), symbol: "menubar.rectangle",
-                                    caption: L("Open SmoothQuit from Spotlight or Finder to return to settings when the icon is hidden."))
+                    Label(L("Show in Menu Bar"), systemImage: "menubar.rectangle")
                 }.toggleStyle(.switch).controlSize(.small)
                     .accessibilityLabel(L("Show in Menu Bar"))
                     .accessibilityHint(L("Hiding the icon keeps SmoothQuit running. Return to settings through Spotlight or Finder."))
                     .help(L("Hiding the icon keeps SmoothQuit running."))
                 Toggle(isOn: Binding(get: { model.loginEnabled }, set: model.setLogin)) {
-                    preferenceLabel(L("Launch at login"), symbol: "arrow.right.to.line",
-                                    caption: L("SmoothQuit starts in the background when you log in to your Mac."))
+                    Label(L("Launch at login"), systemImage: "arrow.right.to.line")
                 }.toggleStyle(.switch).controlSize(.small)
                     .accessibilityLabel(L("Launch at login"))
                     .accessibilityHint(L("SmoothQuit starts in the background when you log in to your Mac."))
@@ -144,24 +147,34 @@ struct SettingsView: View {
                     Button(L("Approve login item in System Settings…")) { SMAppService.openSystemSettingsLoginItems() }
                 }
             } header: { Text(L("Visibility and startup")) }
-            if model.trusted { permissions }
+            Section {
+                DisclosureGroup(L("Advanced"), isExpanded: $advanced) {
+                    Toggle(L("Monitor hidden apps"), isOn: $model.preferences.monitorHidden)
+                    Toggle(L("Monitor apps with minimized windows"), isOn: $model.preferences.monitorMinimized)
+                    Text(L("Any existing window, including one on another Space, always prevents Quit. Turning these options off also suspends monitoring in that state."))
+                        .font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if model.trusted {
+                    Label(L("Accessibility granted"), systemImage: "checkmark.shield")
+                        .foregroundStyle(.secondary).font(.callout)
+                }
+            }
         }.formStyle(.grouped)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: model.monitoringState)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: advanced)
+    }
+    private func chooseApps() {
+        guard let tabs = NSApp.keyWindow?.contentViewController as? SettingsTabs else { return }
+        tabs.selectedTabViewItemIndex = 1
     }
     private var permissions: some View {
         Section {
             HStack(alignment: .top, spacing: 16) {
-                preferenceLabel(model.trusted ? L("Accessibility granted") : L("Accessibility required"),
-                                symbol: model.trusted ? "checkmark.shield" : "lock.shield",
+                preferenceLabel(L("Accessibility required"), symbol: "lock.shield",
                                 caption: L("Allows SmoothQuit to check whether apps have open windows."))
                 Spacer(minLength: 0)
-                HStack(spacing: 8) {
-                    if !model.trusted {
-                        Button(L("Grant access…")) { model.requestAccessibility() }.buttonStyle(.borderedProminent)
-                    }
-                    if model.trusted {
-                        Button(L("Check again")) { model.refresh() }
-                    }
-                }.fixedSize()
+                Button(L("Grant access…")) { model.requestAccessibility() }.buttonStyle(.borderedProminent).fixedSize()
             }.padding(.vertical, 3)
         } header: { Text(L("Permissions")) }
     }
@@ -182,85 +195,142 @@ struct SettingsView: View {
 
 struct RulesView: View {
     @ObservedObject var model: AppModel
+    @Environment(\.undoManager) private var undoManager
     @State private var selection: String?
+    @State private var query = ""
     @State private var showPicker = false
+    @State private var showBundleID = false
+    @State private var editingRule: AppRule?
     @State private var bundleID = ""
+    private var rules: [AppRule] {
+        model.preferences.rules.filter {
+            query.isEmpty || model.name(for: $0.id).localizedCaseInsensitiveContains(query) || $0.id.localizedCaseInsensitiveContains(query)
+        }.sorted { model.name(for: $0.id).localizedStandardCompare(model.name(for: $1.id)) == .orderedAscending }
+    }
     var body: some View {
-        Form {
-            Section {
-                Picker(L("Mode"), selection: $model.preferences.mode) {
-                    Text(L("Include — selected apps only")).tag(SelectionMode.include)
-                    Text(L("Exclude — all except listed")).tag(SelectionMode.exclude)
-                }.pickerStyle(.segmented)
-                Text(model.preferences.mode == .include ? L("Start safely: add one app and test how it behaves.") : L("Other regular apps may quit automatically in this mode. Add exceptions to the list."))
-                    .font(.callout).foregroundStyle(.secondary)
-            } header: { Text(L("Selection mode")) }
-            Section {
-                List(selection: $selection) {
-                    ForEach(model.preferences.rules) { rule in
-                        HStack(spacing: 10) {
-                            Image(nsImage: model.icon(for: rule.id)).resizable().frame(width: 28, height: 28).accessibilityHidden(true)
-                            VStack(alignment: .leading) {
-                                Text(rule.name)
-                                Text(rule.id).font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Text(rule.behavior == .mode ? L("Follow mode") : rule.behavior == .allow ? L("Always") : L("Never"))
-                                .font(.callout).foregroundStyle(.secondary)
-                        }.padding(.vertical, 3).tag(rule.id)
-                    }
-                }.overlay {
-                    if model.preferences.rules.isEmpty {
-                        VStack(spacing: 8) {
-                            Image(systemName: "app.badge").font(.largeTitle)
-                            Text(model.preferences.mode == .include ? L("Add your first app") : L("No exceptions")).font(.headline)
-                            Text(model.preferences.mode == .include ? L("An empty Include list never quits any apps.") : L("Add apps you want to keep running.")).foregroundStyle(.secondary)
-                        }.allowsHitTesting(false)
-                    }
-                }.frame(height: 200).listStyle(.inset).scrollContentBackground(.hidden)
-                HStack {
-                    Button(L("Remove"), systemImage: "minus") {
-                        model.preferences.rules.removeAll { $0.id == selection }; selection = nil
-                    }.disabled(selection == nil)
-                    Spacer()
-                    Button(L("Add app…"), systemImage: "plus") { showPicker = true }
+        VStack(alignment: .leading, spacing: 12) {
+            Picker(L("Automatically quit"), selection: $model.preferences.mode) {
+                Text(L("Only selected apps (Include)")).tag(SelectionMode.include)
+                Text(L("All apps except exceptions (Exclude)")).tag(SelectionMode.exclude)
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            Text(model.preferences.mode == .include ? L("Start safely: add one app and test how it behaves.") : L("Other regular apps may quit automatically in this mode. Add exceptions to the list."))
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            TextField(L("Search apps"), text: $query).textFieldStyle(.roundedBorder)
+            List(selection: $selection) {
+                ForEach(rules) { rule in
+                    HStack(spacing: 10) {
+                        Image(nsImage: model.icon(for: rule.id)).resizable().frame(width: 28, height: 28).accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(model.name(for: rule.id)).fontWeight(.medium)
+                            Text(model.ruleOutcome(rule.id)).font(.callout).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if let delay = rule.delay {
+                            Text(delay, format: .number.precision(.fractionLength(2))) + Text(" s")
+                        }
+                    }.padding(.vertical, 4).tag(rule.id)
+                        .help(rule.id)
+                        .contextMenu {
+                            Button(L("Edit Rule…")) { editingRule = rule }
+                            Button(L("Remove")) { remove(rule.id) }
+                        }
+                        .onTapGesture(count: 2) { editingRule = rule }
                 }
-            } header: { Text(model.preferences.mode == .include ? L("Selected apps") : L("Exceptions")) }
-            Section {
-                DisclosureGroup(L("Add by Bundle ID")) {
-                    HStack {
-                        TextField(L("Bundle ID, e.g. com.apple.TextEdit"), text: $bundleID).textFieldStyle(.roundedBorder)
-                            .onSubmit(addBundle)
-                        Button(L("Add ID"), action: addBundle).disabled(bundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    }.padding(.top, 6)
+            }.listStyle(.inset).overlay {
+                if rules.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "app.badge").font(.largeTitle).accessibilityHidden(true)
+                        Text(query.isEmpty ? (model.preferences.mode == .include ? L("Add your first app") : L("No exceptions")) : L("No Apps Found")).font(.headline)
+                        Text(query.isEmpty ? (model.preferences.mode == .include ? L("An empty Include list never quits any apps.") : L("Automatic Quit applies to all eligible apps.")) : L("Try another name or Bundle ID."))
+                            .foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        if query.isEmpty { Button(L("Add app…")) { showPicker = true } }
+                    }.padding()
                 }
             }
-            if let selection, let rule = model.preferences.rules.first(where: { $0.id == selection }) {
-                let binding = model.binding(for: rule)
+            .onDeleteCommand { if let selection { remove(selection) } }
+            HStack {
+                Button(L("Remove"), systemImage: "minus") { if let selection { remove(selection) } }
+                    .disabled(selection == nil)
+                Button(L("Edit Rule…")) { editingRule = model.preferences.rules.first { $0.id == selection } }
+                    .disabled(selection == nil)
+                Spacer()
+                Menu {
+                    Button(L("Add app…")) { showPicker = true }
+                    Button(L("Add by Bundle ID")) { showBundleID = true }
+                } label: { Label(L("Add…"), systemImage: "plus") }
+                .fixedSize()
+            }
+        }.padding(20)
+        .sheet(isPresented: $showPicker) { AppPicker(model: model) }
+        .sheet(item: $editingRule) { rule in RuleEditor(model: model, rule: rule) }
+        .sheet(isPresented: $showBundleID) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text(L("Add by Bundle ID")).font(.headline)
+                TextField(L("Bundle ID, e.g. com.apple.TextEdit"), text: $bundleID).textFieldStyle(.roundedBorder)
+                HStack {
+                    Spacer()
+                    Button(L("Cancel")) { showBundleID = false }.keyboardShortcut(.cancelAction)
+                    Button(L("Add ID")) {
+                        let count = model.preferences.rules.count
+                        model.add(id: bundleID)
+                        if model.preferences.rules.count > count { bundleID = ""; showBundleID = false }
+                    }.keyboardShortcut(.defaultAction).disabled(!Preferences.validBundleID(bundleID.trimmingCharacters(in: .whitespacesAndNewlines)))
+                }
+            }.padding(24).frame(width: 420)
+        }
+    }
+    private func remove(_ id: String) {
+        model.removeRule(id, undoManager: undoManager)
+        if selection == id { selection = nil }
+    }
+}
+
+struct RuleEditor: View {
+    @ObservedObject var model: AppModel
+    let rule: AppRule
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        let binding = model.binding(for: rule)
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Image(nsImage: model.icon(for: rule.id)).resizable().frame(width: 40, height: 40).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(model.name(for: rule.id)).font(.headline)
+                    Text(rule.id).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
+                }
+                Spacer()
+            }.padding(20)
+            Form {
                 Section {
                     Picker(L("Automatic Quit"), selection: binding.behavior) {
                         Text(L("Follow mode")).tag(RuleBehavior.mode)
                         Text(L("Always allow")).tag(RuleBehavior.allow)
                         Text(L("Never quit")).tag(RuleBehavior.never)
                     }
+                    Text(model.ruleOutcome(rule.id)).font(.callout).foregroundStyle(.secondary)
                     Toggle(L("Custom delay"), isOn: Binding(get: { binding.wrappedValue.delay != nil }, set: {
                         binding.wrappedValue.delay = $0 ? model.preferences.delay : nil
                     }))
                     if let delay = binding.wrappedValue.delay {
                         HStack {
                             Slider(value: Binding(get: { binding.wrappedValue.delay ?? 0.5 }, set: { binding.wrappedValue.delay = $0 }), in: 0.2...2, step: 0.05) { Text(L("App-specific delay")) }
-                            Text(String(format: "%.2f s", delay)).monospacedDigit().frame(width: 60)
+                            (Text(delay, format: .number.precision(.fractionLength(2))) + Text(" s")).monospacedDigit().frame(width: 60)
                         }
                     }
-                    if selection == "com.apple.finder" {
+                    if rule.id == "com.apple.finder" {
                         Text(L("Finder is protected by default. Only an explicit Always allow rule enables automatic Quit.")).font(.callout).foregroundStyle(.secondary)
                     }
-                } header: { Text(L("Rule: %@", rule.name)) }
-            }
-        }.formStyle(.grouped)
-        .sheet(isPresented: $showPicker) { AppPicker(model: model) }
+                }
+            }.formStyle(.grouped)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.18), value: binding.wrappedValue.delay != nil)
+            HStack {
+                Button(L("Reset Rule")) { binding.wrappedValue = AppRule(id: rule.id, name: rule.name) }
+                Spacer()
+                Button(L("Done")) { dismiss() }.keyboardShortcut(.defaultAction)
+            }.padding(20)
+        }.frame(width: 500, height: 360).onExitCommand { dismiss() }
     }
-    private func addBundle() { model.add(id: bundleID); bundleID = "" }
 }
 
 struct AppPicker: View {
@@ -268,25 +338,39 @@ struct AppPicker: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var selected = Set<String>()
+    @State private var showBackground = false
+    private var apps: [InstalledApp] {
+        model.installed.filter { (showBackground || !$0.isBackground) && (query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.id.localizedCaseInsensitiveContains(query)) }
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L("Installed apps")).font(.title2.bold())
             TextField(L("Search by name or Bundle ID"), text: $query).textFieldStyle(.roundedBorder)
+            Toggle(L("Show background and helper apps"), isOn: $showBackground).font(.callout)
             if model.loadingApps { ProgressView(L("Loading apps…")) }
-            List(model.installed.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.id.localizedCaseInsensitiveContains(query) }, selection: $selected) { app in
+            List(apps, selection: $selected) { app in
                 HStack {
                     Image(nsImage: model.icon(for: app.id)).resizable().frame(width: 28, height: 28).accessibilityHidden(true)
-                    VStack(alignment: .leading) { Text(app.name); Text(app.id).font(.caption).foregroundStyle(.secondary) }
-                }.tag(app.id)
+                    Text(app.name)
+                }.tag(app.id).help(app.id)
+            }.overlay {
+                if !model.loadingApps && apps.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass").font(.title).accessibilityHidden(true)
+                        Text(L("No Apps Found")).font(.headline)
+                        Text(L("Try another search or choose an .app file.")).foregroundStyle(.secondary)
+                        Button(L("Clear Search")) { query = "" }.disabled(query.isEmpty)
+                    }
+                }
             }
             HStack {
                 Button(L("Choose .app file…")) { chooseFile() }
                 Spacer()
                 Button(L("Cancel")) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(L("Add selected")) {
-                    for app in model.installed where selected.contains(app.id) { model.add(id: app.id, name: app.name) }
+                    for app in apps where selected.contains(app.id) { model.add(id: app.id, name: app.name) }
                     dismiss()
-                }.keyboardShortcut(.defaultAction).disabled(selected.isEmpty)
+                }.keyboardShortcut(.defaultAction).disabled(!apps.contains { selected.contains($0.id) })
             }
         }.padding(24).frame(width: 580, height: 480).onAppear { model.loadInstalledApps() }
     }
@@ -306,50 +390,78 @@ struct AppPicker: View {
 
 struct ActivityView: View {
     @ObservedObject var model: AppModel
-    @State private var historyOnly = false
+    @State private var activityMode = 0
+    @State private var query = ""
+    @State private var snapshot: [Diagnostic] = []
+    private var rawDiagnostics: Bool { activityMode == 2 }
     private var entries: [Diagnostic] {
-        model.diagnostics.filter { !historyOnly || $0.requested || $0.completed }
+        snapshot.filter {
+            (rawDiagnostics || $0.summary != nil || $0.requested || $0.completed) &&
+            (activityMode != 1 || $0.requested || $0.completed) &&
+            (query.isEmpty || model.name(for: $0.bundleID).localizedCaseInsensitiveContains(query) || $0.bundleID.localizedCaseInsensitiveContains(query))
+        }
+    }
+    private var newCount: Int {
+        guard let newest = snapshot.first?.id else { return model.diagnostics.count }
+        return model.diagnostics.prefix { $0.id != newest }.count
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Picker(L("View"), selection: $historyOnly) {
-                    Text(L("Diagnostics")).tag(false); Text(L("Quit history")).tag(true)
-                }.pickerStyle(.segmented).frame(maxWidth: 260)
+                Picker(L("View"), selection: $activityMode) {
+                    Text(L("Recent Activity")).tag(0)
+                    Text(L("Quit history")).tag(1)
+                    Text(L("Diagnostics")).tag(2)
+                }.frame(width: 240)
                 Spacer()
-                Button(L("Refresh monitoring")) { model.refresh() }
-                Button(L("Clear")) { model.diagnostics.removeAll() }.disabled(model.diagnostics.isEmpty)
+                if rawDiagnostics { Button(L("Restart Monitoring")) { model.refresh() } }
+                Button(L("Clear")) { model.diagnostics.removeAll(); snapshot = [] }.disabled(model.diagnostics.isEmpty)
             }
-            Text(L("The last 200 events, held only in memory for this session. No window titles or document contents."))
-                .font(.callout).foregroundStyle(.secondary)
+            TextField(L("Filter by app"), text: $query).textFieldStyle(.roundedBorder)
+            if newCount > 0 {
+                Button(L("Show %d New Events", newCount)) { snapshot = model.diagnostics }
+                    .help(L("Updates wait here so the list does not move while you read."))
+            }
             List(entries) { entry in
                 HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: entry.completed ? "checkmark.circle" : entry.requested ? "arrow.right.circle" : "info.circle").frame(width: 20).accessibilityHidden(true)
+                    Image(nsImage: model.icon(for: entry.bundleID)).resizable().frame(width: 28, height: 28).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Text(entry.bundleID).fontWeight(.medium)
+                            Text(model.name(for: entry.bundleID)).fontWeight(.medium)
                             Spacer()
-                            Text(entry.date, style: .time).foregroundStyle(.secondary)
+                            Text(entry.date, style: .time).font(.callout).foregroundStyle(.secondary)
                         }
-                        Text(entry.message).textSelection(.enabled)
+                        Text(rawDiagnostics ? entry.message : entry.activityMessage).textSelection(.enabled)
+                        if rawDiagnostics {
+                            Text(entry.bundleID).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                        }
                         if let elapsed = entry.elapsed {
                             Text(L("Measured time: %.3f s", elapsed)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                         }
                     }
                 }.padding(.vertical, 5)
+                    .contextMenu {
+                        Button(L("Copy Details")) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString("\(entry.bundleID)\n\(entry.date.formatted())\n\(entry.message)\n\(entry.elapsed.map { String(format: "%.3f s", $0) } ?? "")", forType: .string)
+                        }
+                    }
             }.overlay {
                 if entries.isEmpty {
                     VStack(spacing: 8) {
-                        Image(systemName: historyOnly ? "clock.arrow.circlepath" : "waveform.path").font(.title)
-                            .accessibilityHidden(true)
-                        Text(historyOnly ? L("No automatic quits yet") : L("No events yet")).font(.headline)
-                        Text(historyOnly ? L("History appears after the first Quit request in this session.") : L("Events appear when monitoring is enabled for a selected app."))
+                        Image(systemName: "clock.arrow.circlepath").font(.title).accessibilityHidden(true)
+                        Text(query.isEmpty ? L("No activity yet") : L("No Apps Found")).font(.headline)
+                        Text(query.isEmpty ? L("Quit requests, completed quits and cancelled decisions appear here.") : L("Try another name or Bundle ID."))
                             .foregroundStyle(.secondary).multilineTextAlignment(.center)
                     }.padding().allowsHitTesting(false)
                 }
             }
-            Text(L("A Quit request does not mean the process has exited. An app may ask you to save or refuse to quit. SmoothQuit never repeats the request or force-quits."))
-                .font(.callout).foregroundStyle(.secondary)
+            Text(L("Session only. A Quit request is not a confirmed exit. No window titles or document contents are recorded."))
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.padding(20)
+            .onAppear { snapshot = model.diagnostics }
+            .onChange(of: model.diagnostics.first?.id) { _, _ in
+                if snapshot.isEmpty { snapshot = model.diagnostics }
+            }
     }
 }

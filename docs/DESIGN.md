@@ -43,3 +43,16 @@ English is the development language; English and Polish use native `.lproj` reso
 ### 1.4.1 motion correction
 
 The 1.4.0 test checked only that an animation existed. A real compositor measurement exposed a corner pivot and a short offset-to-zero movement: the center drifted 3.4371 points. Version 1.4.1 starts at the current resting orientation and completes a full turn around its center. Live measurements covered enable, disable and rapid changes: ±360° travel, zero measured center drift, no reversal. A new opt-in compositor regression test checks the presentation layer on a real native status button, beyond animation configuration alone.
+
+
+## 1.5 state and interaction refinement
+
+Keep the three native preference panes and the original orbit identity. Use system typography, semantic colors and standard AppKit/SwiftUI controls; avoid a custom glass dashboard. General gives priority to Enable, status, delay and pause. Confirmed permission is compact; missing permission gets an actionable message. Advanced window options remain available through disclosure. Quit SmoothQuit remains explicit in the footer and menus.
+
+The menu orbit has five state markers: solid dot (active), hollow dot (disabled), pause bars (paused), exclamation (Accessibility required), plus (choose apps). Text and accessibility labels explain the same states. The centered 0.6-second turn is reserved for intentional Enable/Disable changes. Other state updates are immediate; Reduce Motion suppresses rotation. Short 0.18-second form layout changes respect Reduce Motion.
+
+Applications uses a flexible native list rather than nested scrolling. A sheet contains per-app rules. Search and empty states guide the next action; Bundle IDs remain in details. Recent Activity shows names, icons and outcomes, with raw diagnostics one switch away. New events are loaded explicitly while the pane is being read. Local diagnostics never contain window titles or document contents.
+
+Pause displays a remaining-time value in the open native menu and Settings. The menu timer is invalidated on close; a single scheduled expiry updates presentation without restarting the monitoring engine. Disable is indefinite and clears a prior pause, so a later Enable has an unambiguous effect.
+
+Ponytail Full review: reused the existing AppModel, preferences, native menu and AX engine. No new runtime package, background polling service, design framework or settings persistence layer was introduced. Removed the permanent autosave message and nested rules-list scrolling. Timer ownership is bounded to an open paused menu plus one scheduled pause-expiry notification. Review also preserved the existing Quit-history filter, stopped automatic refreshes from interrupting a turn, and added a fallback for app bundles whose display-name fields are empty.

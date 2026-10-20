@@ -7,6 +7,16 @@ import SmoothQuitCore
 @testable import SmoothQuit
 
 final class InterfaceTests: XCTestCase {
+    @MainActor private var trackingMenu: NSMenu?
+    @MainActor private var trackingTitles = Set<String>()
+    @MainActor private var trackingFinished = false
+    @MainActor @objc private func sampleTrackingMenu() {
+        for item in trackingMenu?.items ?? [] {
+            if item.title.hasPrefix(L("Resumes in %@", "")) { trackingTitles.insert(item.title) }
+            if item.title == L("Pause finished") { trackingFinished = true }
+        }
+    }
+    @MainActor @objc private func closeTrackingMenu() { trackingMenu?.cancelTracking() }
     func testBrandUsesTemplateImageForSystemMenuBarAppearance() throws {
         let image = Brand.image()
         XCTAssertTrue(image.isTemplate)
@@ -32,26 +42,26 @@ final class InterfaceTests: XCTestCase {
         model.trusted = false
         XCTAssertFalse(model.isMonitoring)
         let icon = StatusIconView(frame: NSRect(x: 0, y: 0, width: 18, height: 18))
-        icon.update(active: true, animated: true)
+        icon.update(state: .active, animated: true)
         let enabled = try XCTUnwrap(icon.image?.tiffRepresentation)
-        icon.update(active: false, animated: true, reduceMotion: true)
+        icon.update(state: .disabled, animated: true, reduceMotion: true)
         XCTAssertNotEqual(enabled, icon.image?.tiffRepresentation)
         XCTAssertTrue(icon.image?.isTemplate == true)
         XCTAssertNil(icon.layer?.animation(forKey: "stateChange"))
         XCTAssertNil(icon.hitTest(.zero)) // The native status button still receives clicks.
-        icon.update(active: true, animated: true, reduceMotion: false)
+        icon.update(state: .active, animated: true, reduceMotion: false)
         let turn = try XCTUnwrap(icon.layer?.animation(forKey: "stateChange") as? CABasicAnimation)
         XCTAssertEqual(turn.fromValue as? Double, 0)
         XCTAssertEqual(try XCTUnwrap(turn.toValue as? Double), 2 * .pi, accuracy: 0.0001)
         XCTAssertEqual(icon.layer?.anchorPoint, CGPoint(x: 0.5, y: 0.5))
         XCTAssertEqual(icon.layer?.position, CGPoint(x: icon.frame.midX, y: icon.frame.midY))
         let startedAt = turn.beginTime
-        icon.update(active: false, animated: true, reduceMotion: false)
+        icon.update(state: .disabled, animated: true, reduceMotion: false)
         let continuing = try XCTUnwrap(icon.layer?.animation(forKey: "stateChange") as? CABasicAnimation)
         XCTAssertEqual(continuing.toValue as? Double, turn.toValue as? Double)
         XCTAssertEqual(continuing.beginTime, startedAt)
-        XCTAssertFalse(icon.active!) // Immediate state feedback without reversing the turn.
-        icon.update(active: true, animated: true, reduceMotion: true)
+        XCTAssertEqual(icon.state, .disabled) // Immediate state feedback without reversing the turn.
+        icon.update(state: .active, animated: true, reduceMotion: true)
         XCTAssertNil(icon.layer?.animation(forKey: "stateChange"))
     }
     /// Opt-in compositor check: uses a real native menu bar item, no AX or other apps.
@@ -65,10 +75,10 @@ final class InterfaceTests: XCTestCase {
         let button = try XCTUnwrap(item.button)
         let icon = StatusIconView(frame: NSRect(x: (button.bounds.width-18)/2, y: (button.bounds.height-18)/2, width: 18, height: 18))
         button.addSubview(icon)
-        icon.update(active: false, animated: false)
+        icon.update(state: .disabled, animated: false)
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         for (active, rapid) in [(true, false), (false, false), (true, true)] {
-            icon.update(active: active, animated: true, reduceMotion: false)
+            icon.update(state: active ? .active : .disabled, animated: true, reduceMotion: false)
             CATransaction.flush()
             let start = CACurrentMediaTime()
             let expected = CGPoint(x: icon.frame.midX, y: icon.frame.midY)
@@ -76,8 +86,8 @@ final class InterfaceTests: XCTestCase {
             var samples = 0, changed = false
             while CACurrentMediaTime()-start < 0.85 {
                 if rapid, !changed, CACurrentMediaTime()-start > 0.15 {
-                    icon.update(active: !active, animated: true, reduceMotion: false)
-                    icon.update(active: active, animated: true, reduceMotion: false)
+                    icon.update(state: active ? .disabled : .active, animated: true, reduceMotion: false)
+                    icon.update(state: active ? .active : .disabled, animated: true, reduceMotion: false)
                     changed = true
                 }
                 if let layer = icon.layer?.presentation() {
@@ -99,6 +109,138 @@ final class InterfaceTests: XCTestCase {
             XCTAssertNil(icon.layer?.animation(forKey: "stateChange"))
             print("Live menu turn: active=\(active), rapid=\(rapid), radians=\(travel), centerDrift=\(maxDrift), samples=\(samples)")
         }
+    }
+    @MainActor func testDistinctStatesAndPauseExpiryWithoutRestartingMonitor() throws {
+        let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
+        model.trusted = true
+        XCTAssertEqual(model.monitoringState, .needsApps)
+        model.add(id: "com.apple.TextEdit")
+        XCTAssertEqual(model.monitoringState, .active)
+        XCTAssertNotEqual(model.preferences.rules[0].name, "com.apple.TextEdit")
+        let deadline = Date().addingTimeInterval(61)
+        model.preferences.pauseUntil = deadline
+        XCTAssertEqual(model.monitoringState, .paused)
+        XCTAssertEqual(model.pauseRemaining(at: deadline.addingTimeInterval(-61)), L("Resumes in %@", "1:01"))
+        XCTAssertNil(model.pauseRemaining(at: deadline))
+        model.setEnabled(false)
+        XCTAssertEqual(model.monitoringState, .disabled)
+        XCTAssertNil(model.preferences.pauseUntil)
+        XCTAssertNil(model.pauseRemaining())
+        model.setEnabled(true)
+        model.trusted = false
+        XCTAssertEqual(model.monitoringState, .needsAccess)
+        model.trusted = true
+        var animated: [Bool] = []
+        model.onChange = { animated.append($0) }
+        model.preferences.pauseUntil = Date().addingTimeInterval(0.04)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.10))
+        XCTAssertEqual(model.monitoringState, .active)
+        XCTAssertGreaterThanOrEqual(animated.count, 2) // Saved pause, then expiry notification.
+        XCTAssertTrue(animated.allSatisfy { !$0 })
+        let images = MonitoringState.allCases.compactMap { Brand.image(state: $0).tiffRepresentation }
+        XCTAssertEqual(Set(images).count, MonitoringState.allCases.count)
+    }
+    @MainActor func testMenuCountdownUpdatesWhileOpenAndStopsAfterClose() throws {
+        let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
+        model.pause(minutes: 5)
+        let delegate = AppDelegate(model: model)
+        let menu = NSMenu()
+        delegate.menuWillOpen(menu)
+        let countdown = try XCTUnwrap(menu.items.first { $0.title == model.pauseRemaining() })
+        let first = countdown.title
+        RunLoop.main.run(until: Date().addingTimeInterval(1.1))
+        XCTAssertNotEqual(countdown.title, first)
+        delegate.menuDidClose(menu)
+        let closed = countdown.title
+        RunLoop.main.run(until: Date().addingTimeInterval(1.1))
+        XCTAssertEqual(countdown.title, closed)
+        model.setEnabled(false)
+        delegate.menuWillOpen(menu)
+        XCTAssertTrue(menu.items.contains { $0.title == L("Disabled until you enable it") })
+        XCTAssertFalse(menu.items.contains { $0.title.hasPrefix(L("Resumes in %@", "")) })
+        delegate.menuDidClose(menu)
+    }
+    @MainActor func testAutomaticRefreshDoesNotInterruptAnIntentionalTurn() throws {
+        let icon = StatusIconView(frame: NSRect(x: 3, y: 3, width: 18, height: 18))
+        icon.update(state: .disabled, animated: false)
+        icon.update(state: .active, animated: true, reduceMotion: false)
+        XCTAssertNotNil(icon.layer?.animation(forKey: "stateChange"))
+        icon.update(state: .active, animated: false, reduceMotion: false)
+        XCTAssertNotNil(icon.layer?.animation(forKey: "stateChange"))
+        icon.update(state: .paused, animated: false, reduceMotion: false)
+        XCTAssertNil(icon.layer?.animation(forKey: "stateChange"))
+        icon.update(state: .needsAccess, animated: false)
+        XCTAssertNil(icon.layer?.animation(forKey: "stateChange"))
+    }
+    @MainActor func testRulesExplainEffectiveBehaviorAndSupportUndoRedo() throws {
+        let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
+        model.add(id: "com.apple.TextEdit")
+        model.preferences.rules[0].delay = 1.25
+        let original = model.preferences.rules[0]
+        XCTAssertEqual(model.ruleOutcome(original.id), L("Will quit after the last window closes"))
+        model.preferences.mode = .exclude
+        XCTAssertEqual(model.ruleOutcome(original.id), L("Kept running"))
+        model.preferences.rules[0].behavior = .allow
+        model.setEnabled(false)
+        XCTAssertEqual(model.ruleOutcome(original.id), L("Will quit after the last window closes"))
+        let undo = UndoManager()
+        undo.beginUndoGrouping()
+        model.removeRule(original.id, undoManager: undo)
+        undo.endUndoGrouping()
+        XCTAssertTrue(model.preferences.rules.isEmpty)
+        undo.undo()
+        XCTAssertEqual(model.preferences.rules[0].delay, 1.25)
+        XCTAssertEqual(model.preferences.rules[0].behavior, .allow)
+        undo.redo()
+        XCTAssertTrue(model.preferences.rules.isEmpty)
+        XCTAssertEqual(model.ruleOutcome("com.apple.finder"), L("Kept running"))
+        model.add(id: "pl.smoothquit.app")
+        XCTAssertTrue(model.preferences.rules.isEmpty)
+        XCTAssertNotNil(model.error)
+    }
+    func testActivityDistinguishesQuitRequestFromExit() {
+        let request = Diagnostic(bundleID: "com.apple.TextEdit", message: "raw AX details", requested: true, elapsed: 0.54)
+        let exit = Diagnostic(bundleID: "com.apple.TextEdit", message: "raw exit", completed: true, elapsed: 0.6)
+        XCTAssertNotEqual(request.activityMessage, exit.activityMessage)
+        XCTAssertEqual(request.activityMessage, L("Quit requested — waiting for the app to exit"))
+        let blocked = Diagnostic(bundleID: "com.apple.TextEdit", message: "raw AX error", summary: "Kept running")
+        XCTAssertEqual(blocked.activityMessage, "Kept running")
+    }
+    @MainActor func testLivePauseMenuUpdatesDuringNativeTrackingAndExpires() throws {
+        guard ProcessInfo.processInfo.environment["SMOOTHQUIT_LIVE_ICON"] == "1" else {
+            throw XCTSkip("Requires an unlocked interactive desktop for native menu tracking")
+        }
+        let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
+        model.trusted = true; model.preferences.mode = .exclude
+        model.preferences.pauseUntil = Date().addingTimeInterval(2.3)
+        let delegate = AppDelegate(model: model)
+        let menu = NSMenu(); menu.delegate = delegate; trackingMenu = menu
+        trackingTitles = []; trackingFinished = false
+        let sampler = Timer(timeInterval: 0.15, target: self, selector: #selector(sampleTrackingMenu), userInfo: nil, repeats: true)
+        let close = Timer(timeInterval: 3.5, target: self, selector: #selector(closeTrackingMenu), userInfo: nil, repeats: false)
+        RunLoop.main.add(sampler, forMode: .common); RunLoop.main.add(close, forMode: .common)
+        defer { sampler.invalidate(); close.invalidate(); delegate.menuDidClose(menu); trackingMenu = nil }
+        let screen = try XCTUnwrap(NSScreen.main).visibleFrame
+        NSApp.activate(ignoringOtherApps: true)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        menu.popUp(positioning: nil, at: NSPoint(x: screen.midX, y: screen.midY), in: nil)
+        XCTAssertGreaterThanOrEqual(trackingTitles.count, 2, "Countdown must tick inside native menu tracking")
+        XCTAssertTrue(trackingFinished)
+        XCTAssertEqual(model.monitoringState, .active)
+        XCTAssertTrue(menu.items.contains { $0.title == model.status })
+        print("Native tracking countdown: \(trackingTitles.sorted()), expired=\(trackingFinished)")
     }
     func testEnglishAndPolishResourcesAndDiagnosticFormats() throws {
         let bundle = Localization.bundle
@@ -218,7 +360,7 @@ final class InterfaceTests: XCTestCase {
         let model = AppModel(defaults: defaults)
         model.add(id: "com.apple.TextEdit", name: "TextEdit")
         model.add(id: "com.apple.Safari", name: "Safari")
-        model.diagnostics = [Diagnostic(bundleID: "com.apple.TextEdit", message: "Przykładowy podgląd: normalne okno zamknięte; weryfikacja po 0,50 s")]
+        model.diagnostics = [Diagnostic(bundleID: "com.apple.TextEdit", message: L("Process exited after a normal Quit request"), completed: true, elapsed: 0.563)]
         model.trusted = true // Deterministic fixture, not a permission grant.
         model.loginEnabled = false
         let output = ProcessInfo.processInfo.environment["SMOOTHQUIT_SNAPSHOT_DIR"]

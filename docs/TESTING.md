@@ -8,7 +8,7 @@ swift test
 
 The suite covers last-window gating, multiple windows, reopening/cancellation, off-Space identity retention, minimized/hidden and auxiliary windows, rules, invalid AX metadata, event bursts, process-specific event fencing and persisted settings. Interface checks cover settings-window reuse, launch/reopen behavior, menu visibility persistence, stable per-app bindings and light/dark rendering at regular and compact sizes.
 
-Some integration checks read already-running Safari/Finder windows and subscriptions if the test host has Accessibility. They skip when that is unavailable. Two tests can send Quit and are **always skipped unless explicitly enabled**. The GitHub-hosted runner does not provide a usable interactive Safari/Finder AX session even when its trust check returns true. CI explicitly excludes the two read-only desktop checks; local `swift test` retains them. CI therefore runs 48 tests: 45 pass and the 2 Quit tests plus the live compositor test remain skipped. The initial CI run exposed this environment assumption; production window validation remains strict.
+Some integration checks read already-running Safari/Finder windows and subscriptions if the test host has Accessibility. They skip when that is unavailable. Two tests can send Quit and are **always skipped unless explicitly enabled**. The GitHub-hosted runner does not provide a usable interactive Safari/Finder AX session even when its trust check returns true. CI explicitly excludes the two read-only desktop checks; local `swift test` retains them. CI excludes those two read-only AX checks. Interactive Quit, menu tracking and compositor tests remain opt-in. The initial CI run exposed this environment assumption; production window validation remains strict.
 
 The local 1.4.1 run on macOS 27.0.1 / Xcode 27.1 passed **47 tests**, with **3 interactive tests skipped**, out of 50. The ordinary suite does not claim to prove real behavior of every app or every Space.
 
@@ -84,3 +84,22 @@ SMOOTHQUIT_LIVE_ICON=1 swift test --filter InterfaceTests/testLiveMenuIconComple
 ```
 
 The regular test verifies Reduce Motion, no initial animation, state artwork and rapid-change coalescing. No window-observation or Quit engine code changed in 1.4.1; Calendar results above belong to 1.4.0.
+
+
+## Native settings and state feedback — 1.5.0
+
+The window detection, safety fences, configured closing delay and normal Quit mechanism are unchanged. Changes in Monitor are limited to presenting decision summaries and avoiding a duplicate blocked-decision log.
+
+The suite now contains 56 tests. New checks cover distinct monitoring states, finite versus indefinite suspension, exact remaining-time formatting, automatic UI updates on pause expiry, a countdown that updates only while its menu is open, automatic refreshes that do not interrupt an intentional turn, rule outcomes, rule removal with Undo/Redo and the distinction between a Quit request and process exit. English and Polish resource keys and format arguments are checked together.
+
+The opt-in UI tests use only their own temporary native status item/menu; they do not start the production monitor or quit another app:
+
+```sh
+SMOOTHQUIT_LIVE_ICON=1 swift test --filter 'InterfaceTests/testLive'
+```
+
+The compositor test measures full turns in both directions, rapid changes and center stability. The menu tracking test keeps an actual NSMenu open, observes multiple remaining-time values and checks expiry while AppKit is running its tracking loop.
+
+UI smoke checks covered the packaged app's three panes, pause/resume, indefinite Disable, app search and selection, a disposable TextEdit rule, per-app delay formatting and rule removal. TextEdit itself was not launched. The temporary rule was removed and the original settings were restored. The packaged app required a new Accessibility grant, so this release does not claim a new target-app Quit test. The installed Applications copy was not replaced. Light/dark regular and compact renders remain fixtures, not proof of a complete VoiceOver or multi-display audit.
+
+Final local validation on 2026-10-20: **52 passed, 4 interactive tests skipped, 0 failures out of 56** in the ordinary suite. The two opt-in native UI tests passed separately: +360° / −360° and rapid turns with **0.0 pt center drift**, and the open menu displayed **0:03 → 0:02 → 0:01**, then the finished state. One earlier tracking attempt dismissed the menu after 1.36 seconds before expiry; the fixture now activates its own test application before tracking, and the focused reruns passed. The compiler emitted its x86_64/SDK 27 deprecation warning; the verified final binary retains a macOS 14 minimum deployment target for both architectures.
