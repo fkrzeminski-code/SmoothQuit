@@ -48,7 +48,7 @@ Finder is protected by default. SmoothQuit always protects its own process. A no
 - **Broader native window discovery:** combines AXWindows with AXMainWindow and AXFocusedWindow, including apps whose AXWindows list omits their main window. A new-window notification is observed directly, before the list catches up.
 - **Quick exceptions and reports:** Choose “Never Auto-Quit [app]” in the status menu to add a persistent Never quit rule for the last regular foreground app, without changing Include/Exclude mode. Copy Diagnostic Report copies version, macOS, rules and up to 20 filtered events to the clipboard; it never sends them.
 
-Release 1.6.2 is published as a regular GitHub release. This does not change its ad hoc signing or imply Apple notarization.
+Release 1.6.3 includes a safety and interface review: partial AX reads retain discovered window identities, Include status reflects effective rules, and filtered-out rules cannot be edited or removed accidentally. See the [review and verification record](docs/REVIEW-1.6.3.md). A regular GitHub release does not change the ad hoc signing or imply Apple notarization.
 
 ## Privacy
 
@@ -75,7 +75,7 @@ swift test
 ./scripts/build.sh
 ```
 
-Output: `Builds/Release-1.6.2/SmoothQuit.app` and `SmoothQuit.dmg`, with build/test/signature reports and a source snapshot. The script does not install or launch the app. Build products are ignored by Git.
+Output: `Builds/Release-1.6.3/SmoothQuit.app` and `SmoothQuit.dmg`, with build/test/signature reports and a source snapshot. The script does not install or launch the app. Build products are ignored by Git.
 
 Open `Package.swift` in Xcode to work on the project. SwiftUI and AppKit provide the interface; AXObserver, NSWorkspace and CoreGraphics provide observation. There are no third-party runtime packages.
 

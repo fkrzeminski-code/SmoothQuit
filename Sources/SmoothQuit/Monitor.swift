@@ -81,12 +81,16 @@ enum WindowReader {
         guard error == .success, let result else { throw WindowReadError.ax(attribute, error.rawValue) }
         return result
     }
-    static func windows(_ element: AXUIElement, read: (AXUIElement, String) throws -> CFTypeRef = value) throws -> [AXUIElement] {
+    static func windows(_ element: AXUIElement, discovered: ([AXUIElement]) -> Void = { _ in },
+                        read: (AXUIElement, String) throws -> CFTypeRef = value) throws -> [AXUIElement] {
         let value = try read(element, kAXWindowsAttribute)
         guard CFGetTypeID(value) == CFArrayGetTypeID(), let windows = value as? [AXUIElement],
               windows.allSatisfy({ CFGetTypeID($0) == AXUIElementGetTypeID() }) else { throw WindowReadError.malformed }
         guard windows.count <= 256 else { throw WindowReadError.budget }
         var result = windows
+        // Retain known identities even if a later supplemental read fails.
+        // Incomplete reads still throw; discovery is never proof that Quit is safe.
+        discovered(result)
         // Catalyst apps can expose a real main/focused window while AXWindows is
         // successfully empty. These are additive identities, never replacements
         // for AXWindows or the off-Space ledger.
@@ -96,7 +100,10 @@ enum WindowReader {
             catch WindowReadError.ax(_, let code) where code == AXError.attributeUnsupported.rawValue || code == AXError.noValue.rawValue { continue }
             guard CFGetTypeID(raw) == AXUIElementGetTypeID() else { throw WindowReadError.malformed }
             let window = unsafeBitCast(raw, to: AXUIElement.self)
-            if !result.contains(where: { CFEqual($0, window) }) { result.append(window) }
+            if !result.contains(where: { CFEqual($0, window) }) {
+                result.append(window)
+                discovered([window])
+            }
         }
         guard result.count <= 256 else { throw WindowReadError.budget }
         return result
@@ -421,15 +428,8 @@ final class Monitor {
         let started = now
         watch.readWasTransient = false
         do {
-            let elements = try WindowReader.windows(watch.element)
+            let elements = try WindowReader.windows(watch.element, discovered: { self.seed($0, watch: watch) })
             var snapshot: [ObservedWindow] = []
-            // Seed the entire returned list before any metadata IPC can fail.
-            // An unvisited window on another Space must remain an explicit veto.
-            for element in elements where !watch.tracked.contains(where: { CFEqual($0.element, element) }) {
-                nextID &+= 1
-                watch.tracked.append((nextID, element, false))
-                watch.gate.observe([ObservedWindow(nextID, .unknown)])
-            }
             for element in elements {
                 guard now - started < 0.35 else { throw WindowReadError.budget }
                 snapshot.append(try track(element, watch: watch))
@@ -445,13 +445,16 @@ final class Monitor {
             return nil
         }
     }
-    @discardableResult
-    private func track(_ element: AXUIElement, watch: Watch) throws -> ObservedWindow {
-        if !watch.tracked.contains(where: { CFEqual($0.element, element) }) {
+    private func seed(_ elements: [AXUIElement], watch: Watch) {
+        for element in elements where !watch.tracked.contains(where: { CFEqual($0.element, element) }) {
             nextID &+= 1
             watch.tracked.append((nextID, element, false))
             watch.gate.observe([ObservedWindow(nextID, .unknown)])
         }
+    }
+    @discardableResult
+    private func track(_ element: AXUIElement, watch: Watch) throws -> ObservedWindow {
+        seed([element], watch: watch)
         guard let index = watch.tracked.firstIndex(where: { CFEqual($0.element, element) }) else { throw WindowReadError.malformed }
         let metadata = try WindowReader.metadata(element, id: watch.tracked[index].id)
         watch.gate.observe([metadata])
@@ -562,7 +565,7 @@ final class Monitor {
         }
         // Close the CG/AX read gap as far as public APIs permit. No API can atomically
         // assert zero windows and quit a different process; a tiny residual race remains.
-        guard let finalWindows = try? WindowReader.windows(watch.element), finalWindows.isEmpty,
+        guard let finalWindows = try? WindowReader.windows(watch.element, discovered: { self.seed($0, watch: watch) }), finalWindows.isEmpty,
               now - started < 0.35 else { block(L("Quit cancelled: state changed or verification exceeded 350 ms")); return }
         guard let sent = fence.perform(ifUnchanged: revision, pid: watch.app.processIdentifier, {
             guard AXIsProcessTrusted(), preferences.monitorHidden || !watch.app.isHidden else { return false }

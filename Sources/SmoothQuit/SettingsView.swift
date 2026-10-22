@@ -93,7 +93,8 @@ struct SettingsView: View {
             if model.monitoringState == .needsApps {
                 Section {
                     HStack {
-                        Text(L("An empty Include list never quits any apps.")).foregroundStyle(.secondary)
+                        Text(L("No apps are allowed to quit. Add an app or change a Never quit rule."))
+                            .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                         Spacer()
                         Button(L("Choose Apps…")) { chooseApps() }
                     }
@@ -262,12 +263,12 @@ struct RulesView: View {
                     }.padding()
                 }
             }
-            .onDeleteCommand { if let selection { remove(selection) } }
+            .onDeleteCommand { if let rule = selectedRule { remove(rule.id) } }
             HStack {
-                Button(L("Remove"), systemImage: "minus") { if let selection { remove(selection) } }
-                    .disabled(selection == nil)
-                Button(L("Edit Rule…")) { editingRule = model.preferences.rules.first { $0.id == selection } }
-                    .disabled(selection == nil)
+                Button(L("Remove"), systemImage: "minus") { if let rule = selectedRule { remove(rule.id) } }
+                    .disabled(selectedRule == nil)
+                Button(L("Edit Rule…")) { editingRule = selectedRule }
+                    .disabled(selectedRule == nil)
                 Spacer()
                 Menu {
                     Button(L("Add app…")) { showPicker = true }
@@ -276,12 +277,19 @@ struct RulesView: View {
                 .fixedSize()
             }
         }.padding(20)
+        .onChange(of: rules.map(\.id)) { _, ids in
+            if let selection, !ids.contains(selection) { self.selection = nil }
+        }
         .sheet(isPresented: $showPicker) { AppPicker(model: model) }
         .sheet(item: $editingRule) { rule in RuleEditor(model: model, rule: rule) }
         .sheet(isPresented: $showBundleID) {
             VStack(alignment: .leading, spacing: 16) {
                 Text(L("Add by Bundle ID")).font(.headline)
                 TextField(L("Bundle ID, e.g. com.apple.TextEdit"), text: $bundleID).textFieldStyle(.roundedBorder)
+                if let hint = bundleIDHint {
+                    Text(hint).font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 HStack {
                     Spacer()
                     Button(L("Cancel")) { showBundleID = false }.keyboardShortcut(.cancelAction)
@@ -289,7 +297,8 @@ struct RulesView: View {
                         let count = model.preferences.rules.count
                         model.add(id: bundleID)
                         if model.preferences.rules.count > count { bundleID = ""; showBundleID = false }
-                    }.keyboardShortcut(.defaultAction).disabled(!Preferences.validBundleID(bundleID.trimmingCharacters(in: .whitespacesAndNewlines)))
+                    }.keyboardShortcut(.defaultAction)
+                        .disabled(!Preferences.validBundleID(bundleID.trimmingCharacters(in: .whitespacesAndNewlines)) || bundleIDHint != nil)
                 }
             }.padding(24).frame(width: 420)
         }
@@ -297,6 +306,13 @@ struct RulesView: View {
     private func remove(_ id: String) {
         model.removeRule(id, undoManager: undoManager)
         if selection == id { selection = nil }
+    }
+    private var selectedRule: AppRule? { rules.first { $0.id == selection } }
+    private var bundleIDHint: String? {
+        let id = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if id == "pl.smoothquit.app" || id == Bundle.main.bundleIdentifier { return L("SmoothQuit always protects itself.") }
+        if model.preferences.rules.contains(where: { $0.id == id }) { return L("Already added. Select this app in the list to edit its rule.") }
+        return nil
     }
 }
 

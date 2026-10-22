@@ -232,3 +232,5 @@
 "Window veto: AX snapshot %d, remembered %d" = "Blokada okien: bieżące AX %d, zapamiętane %d";
 "New window observation incomplete: %@" = "Niepełna obserwacja nowego okna: %@";
 "AX window list is empty during discovery; checking readiness again" = "Lista okien AX jest pusta podczas wykrywania; ponowne sprawdzenie gotowości";
+"No apps are allowed to quit. Add an app or change a Never quit rule." = "Żadna aplikacja nie ma zgody na zamknięcie. Dodaj aplikację lub zmień regułę Nigdy nie kończ.";
+"Already added. Select this app in the list to edit its rule." = "Już dodano. Wybierz tę aplikację na liście, aby zmienić jej regułę.";

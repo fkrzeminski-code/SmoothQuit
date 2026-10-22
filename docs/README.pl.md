@@ -6,7 +6,7 @@ Natywna aplikacja macOS, która po zamknięciu ostatniego normalnego okna czeka 
 
 Pobierz `SmoothQuit.dmg` z [GitHub Releases](https://github.com/fkrzeminski-code/SmoothQuit/releases), otwórz obraz i przeciągnij aplikację do **Applications / Aplikacje**. Zakończ wcześniej starą kopię SmoothQuit. Dostępny build jest uniwersalny: Apple Silicon + Intel.
 
-To wersja testowa, podpisana lokalnie **ad hoc**, bez notaryzacji Apple. macOS może zablokować pobrany plik. Jeśli ufasz temu wydaniu, możesz skorzystać ze standardowej opcji systemowej „Otwórz mimo to”, o ile jest dostępna. Nie wyłączaj Gatekeeper ani SIP. Można też zbudować aplikację ze źródeł — bez płatnego konta developerskiego.
+To wydanie jest podpisane lokalnie **ad hoc**, bez notaryzacji Apple. macOS może zablokować pobrany plik. Jeśli ufasz temu wydaniu, możesz skorzystać ze standardowej opcji systemowej „Otwórz mimo to”, o ile jest dostępna. Nie wyłączaj Gatekeeper ani SIP. Można też zbudować aplikację ze źródeł — bez płatnego konta developerskiego.
 
 ## Pierwsze uruchomienie
 

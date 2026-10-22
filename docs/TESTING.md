@@ -1,5 +1,19 @@
 # Testing
 
+## Current review — 1.6.3 (2026-10-22)
+
+See the [1.6.3 review](REVIEW-1.6.3.md) for fixed findings, design decisions, live timings, failed attempts and coverage limits. The ordinary suite contains 72 tests: 64 passed and 8 opt-in cases skipped on the review Mac. Native icon/menu/lifecycle checks and production-monitor tests ran separately; CI omits two desktop-dependent read-only checks.
+
+The new TextEdit fixture exercises three independent, authorized scenarios. Prepare only an empty TextEdit document, temporarily disable any installed automatic-quit utility, and follow the `CANCEL READY` instruction. Never run these against personal documents.
+
+```sh
+SMOOTHQUIT_LIVE_CANCEL=multiple swift test --filter IntegrationTests/testLiveWindowVetoOrDisableDuringCountdown
+SMOOTHQUIT_LIVE_CANCEL=disable swift test --filter IntegrationTests/testLiveWindowVetoOrDisableDuringCountdown
+SMOOTHQUIT_LIVE_CANCEL=reopen swift test --filter IntegrationTests/testLiveWindowVetoOrDisableDuringCountdown
+```
+
+The first creates and closes a second empty window. The second disables the actual Monitor when it arms a countdown. The third uses a 2 s delay so the operator can close and immediately reopen a blank window. Each asserts that no Quit request occurs. These tests never launch apps or operate another app's controls themselves.
+
 ## Automated checks
 
 ```sh
@@ -8,7 +22,7 @@ swift test
 
 The suite covers last-window gating, multiple windows, reopening/cancellation, off-Space identity retention, minimized/hidden and auxiliary windows, rules, invalid AX metadata, event bursts, process-specific event fencing and persisted settings. Interface checks cover settings-window reuse, launch/reopen behavior, menu visibility persistence, stable per-app bindings and light/dark rendering at regular and compact sizes.
 
-Some integration checks read already-running Safari/Finder windows and subscriptions if the test host has Accessibility. They skip when that is unavailable. Two tests can send Quit and are **always skipped unless explicitly enabled**. The GitHub-hosted runner does not provide a usable interactive Safari/Finder AX session even when its trust check returns true. CI explicitly excludes the two read-only desktop checks; local `swift test` retains them. CI excludes those two read-only AX checks. Interactive Quit, menu tracking and compositor tests remain opt-in. The initial CI run exposed this environment assumption; production window validation remains strict.
+Some integration checks read already-running Safari/Finder windows and subscriptions if the test host has Accessibility. They skip when that is unavailable. Tests that start the production Monitor or can send Quit are **always skipped unless explicitly enabled**. The GitHub-hosted runner does not provide a usable interactive Safari/Finder AX session even when its trust check returns true. CI explicitly excludes the two read-only desktop checks; local `swift test` retains them. Interactive Quit, menu tracking and compositor tests remain opt-in. The initial CI run exposed this environment assumption; production window validation remains strict.
 
 The local 1.4.1 run on macOS 27.0.1 / Xcode 27.1 passed **47 tests**, with **3 interactive tests skipped**, out of 50. The ordinary suite does not claim to prove real behavior of every app or every Space.
 

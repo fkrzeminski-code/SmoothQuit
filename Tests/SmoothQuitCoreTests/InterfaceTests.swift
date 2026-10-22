@@ -207,6 +207,40 @@ final class InterfaceTests: XCTestCase {
         XCTAssertTrue(model.preferences.rules.isEmpty)
         XCTAssertNotNil(model.error)
     }
+    @MainActor func testIncludeStatusRequiresAnActuallyAllowedRule() throws {
+        let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(defaults: defaults)
+        model.trusted = true
+        model.add(id: "com.apple.finder")
+        XCTAssertEqual(model.monitoringState, .needsApps)
+        model.add(id: "com.apple.TextEdit")
+        XCTAssertEqual(model.monitoringState, .active)
+        model.keepRunning("com.apple.TextEdit", name: "TextEdit")
+        XCTAssertEqual(model.monitoringState, .needsApps)
+        model.preferences.rules[0].behavior = .allow
+        XCTAssertEqual(model.monitoringState, .active)
+        model.preferences.rules[0].behavior = .never
+        model.preferences.mode = .exclude
+        XCTAssertEqual(model.monitoringState, .active)
+    }
+    @MainActor func testStoredRulesKeepStableIdentitiesAndValidSliderValues() throws {
+        let suite = "pl.smoothquit.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var prefs = Preferences()
+        var first = AppRule(id: "com.apple.TextEdit", name: "TextEdit")
+        first.behavior = .never; first.delay = 100
+        var duplicate = first; duplicate.behavior = .allow
+        var second = AppRule(id: "com.apple.Safari", name: "Safari"); second.delay = -1
+        prefs.rules = [first, duplicate, second, AppRule(id: "invalid", name: "Invalid")]
+        defaults.set(try JSONEncoder().encode(prefs), forKey: "preferences.v1")
+        let model = AppModel(defaults: defaults)
+        XCTAssertEqual(model.preferences.rules.map(\.id), [first.id, second.id])
+        XCTAssertEqual(model.preferences.rules[0].behavior, .never)
+        XCTAssertEqual(model.preferences.rules.map(\.delay), [2, 0.2])
+    }
     func testActivityDistinguishesQuitRequestFromExit() {
         let request = Diagnostic(bundleID: "com.apple.TextEdit", message: "raw AX details", requested: true, elapsed: 0.54)
         let exit = Diagnostic(bundleID: "com.apple.TextEdit", message: "raw exit", completed: true, elapsed: 0.6)

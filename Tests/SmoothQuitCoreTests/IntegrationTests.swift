@@ -5,6 +5,50 @@ import SmoothQuitCore
 @testable import SmoothQuit
 
 final class IntegrationTests: XCTestCase {
+    /// Operator scenarios: retain a second window, disable during a countdown,
+    /// or reopen a window before the configured deadline. Only blank test windows.
+    func testLiveWindowVetoOrDisableDuringCountdown() throws {
+        let scenario = ProcessInfo.processInfo.environment["SMOOTHQUIT_LIVE_CANCEL"]
+        guard ["multiple", "disable", "reopen"].contains(scenario) else {
+            throw XCTSkip("Requires disposable blank TextEdit windows and operator authorization")
+        }
+        _ = NSApplication.shared
+        guard AXIsProcessTrusted() else { throw XCTSkip("Test host lacks Accessibility") }
+        let app = try XCTUnwrap(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.TextEdit").first)
+        let windows = try WindowReader.windows(AXUIElementCreateApplication(app.processIdentifier))
+        guard try windows.enumerated().contains(where: { try WindowReader.metadata($0.element, id: UInt64($0.offset)).kind == .normal }) else {
+            throw XCTSkip("Prepare a blank TextEdit window before starting")
+        }
+        let monitor = Monitor()
+        var prefs = Preferences(); prefs.rules = [AppRule(id: "com.apple.TextEdit", name: "TextEdit")]
+        if scenario == "reopen" { prefs.delay = 2 }
+        let decision = expectation(description: "Remaining window veto or disable during countdown")
+        let noQuit = expectation(description: "No Quit after veto or disable"); noQuit.isInverted = true
+        var handled = false
+        monitor.onDiagnostic = { [weak monitor] entry in
+            print("CANCEL: \(entry.message)"); fflush(stdout)
+            if !handled, scenario == "multiple", entry.summary == L("Kept running: an open or remembered window remains") {
+                handled = true; decision.fulfill()
+            } else if !handled, scenario == "disable", entry.message == L("Normal window closed; verifying after %.2f s", 0.5) {
+                handled = true; prefs.enabled = false; monitor?.update(prefs); decision.fulfill()
+            } else if !handled, scenario == "reopen", entry.summary == L("Cancelled: a new window was created") {
+                handled = true; decision.fulfill()
+            }
+            if entry.requested || entry.completed { noQuit.fulfill() }
+        }
+        monitor.start(preferences: prefs)
+        defer { prefs.enabled = false; monitor.update(prefs) }
+        let instruction = scenario == "multiple" ? "create and close a second blank window, keeping the original" :
+            scenario == "reopen" ? "close the blank window and immediately create a new one (2 s delay)" :
+            "close the blank TextEdit window; the monitor will disable during its countdown"
+        print("CANCEL READY: \(instruction)")
+        fflush(stdout)
+        wait(for: [decision], timeout: 60)
+        wait(for: [noQuit], timeout: scenario == "reopen" ? 2.2 : 1.2)
+        XCTAssertFalse(app.isTerminated)
+        if scenario == "disable" { XCTAssertTrue(try WindowReader.windows(AXUIElementCreateApplication(app.processIdentifier)).isEmpty) }
+        if scenario == "reopen" { XCTAssertFalse(try WindowReader.windows(AXUIElementCreateApplication(app.processIdentifier)).isEmpty) }
+    }
     /// Opt-in: the operator must prepare ONLY disposable blank TextEdit windows.
     /// This test runs the production monitor and sends its normal Quit request.
     func testLiveTextEditCloseAndQuit() throws {
@@ -33,7 +77,9 @@ final class IntegrationTests: XCTestCase {
         wait(for: [requested, completed], timeout: 45, enforceOrder: true)
         prefs.enabled = false
         monitor.update(prefs)
-        XCTAssertTrue(app.isTerminated)
+        // A separately obtained NSRunningApplication may not have published its
+        // KVO state yet when the monitor's exit receipt arrives. Re-query the PID.
+        XCTAssertTrue(NSRunningApplication(processIdentifier: app.processIdentifier)?.isTerminated ?? true)
     }
     /// Opt-in operator test. No app is launched by this test; the operator opens
     /// Mail/Calendar’s main window or a disposable Preview document after LIVE READY.
@@ -94,42 +140,42 @@ final class IntegrationTests: XCTestCase {
     func testMainAndFocusedWindowSupplementAnEmptyCatalystWindowList() throws {
         let app = AXUIElementCreateApplication(100)
         let window = AXUIElementCreateApplication(101) // Opaque identity; no IPC in this fixture.
-        let result = try WindowReader.windows(app) { _, attribute in
+        let result = try WindowReader.windows(app, read: { _, attribute in
             if attribute == kAXWindowsAttribute { return [] as CFArray }
             return window
-        }
+        })
         XCTAssertEqual(result.count, 1) // Main/focused point to the same window.
         XCTAssertTrue(CFEqual(result[0], window))
     }
     func testSupplementalWindowNeverReplacesOtherSpaceOrMasksAXFailure() throws {
         let app = AXUIElementCreateApplication(100)
         let offSpace = AXUIElementCreateApplication(101), main = AXUIElementCreateApplication(102)
-        let result = try WindowReader.windows(app) { _, attribute in
+        let result = try WindowReader.windows(app, read: { _, attribute in
             if attribute == kAXWindowsAttribute { return [offSpace] as CFArray }
             return main
-        }
+        })
         XCTAssertEqual(result.count, 2)
         XCTAssertTrue(result.contains { CFEqual($0, offSpace) })
         for error in [AXError.cannotComplete, .apiDisabled, .invalidUIElement] {
-            XCTAssertThrowsError(try WindowReader.windows(app) { _, attribute in
+            XCTAssertThrowsError(try WindowReader.windows(app, read: { _, attribute in
                 if attribute == kAXWindowsAttribute { return [] as CFArray }
                 throw WindowReadError.ax(attribute, error.rawValue)
-            })
+            }))
         }
-        XCTAssertThrowsError(try WindowReader.windows(app) { _, attribute in
+        XCTAssertThrowsError(try WindowReader.windows(app, read: { _, attribute in
             if attribute == kAXWindowsAttribute { throw WindowReadError.ax(attribute, AXError.cannotComplete.rawValue) }
             return main
-        })
+        }))
         for missing in [AXError.noValue, .attributeUnsupported] {
-            XCTAssertTrue(try WindowReader.windows(app) { _, attribute in
+            XCTAssertTrue(try WindowReader.windows(app, read: { _, attribute in
                 if attribute == kAXWindowsAttribute { return [] as CFArray }
                 throw WindowReadError.ax(attribute, missing.rawValue)
-            }.isEmpty)
+            }).isEmpty)
         }
-        XCTAssertThrowsError(try WindowReader.windows(app) { _, attribute in
+        XCTAssertThrowsError(try WindowReader.windows(app, read: { _, attribute in
             if attribute == kAXWindowsAttribute { return [] as CFArray }
             return "invalid window payload" as CFString
-        })
+        }))
     }
     func testLiveWindowInventoryWithoutTitles() throws {
         guard let id = ProcessInfo.processInfo.environment["SMOOTHQUIT_INVENTORY_APP"] else { throw XCTSkip("Read-only opt-in window inventory") }
@@ -151,6 +197,31 @@ final class IntegrationTests: XCTestCase {
                 let subrole = role == kAXWindowRole ? ((try? WindowReader.value(child, kAXSubroleAttribute)) as? String ?? "unreadable") : "—"
                 print("INVENTORY child \(index) role=\(role) subrole=\(subrole)")
             }
+        }
+    }
+    func testPartialDiscoveryRetainsOtherSpaceWindowBeforeSupplementalFailure() throws {
+        let app = AXUIElementCreateApplication(100)
+        let otherSpace = AXUIElementCreateApplication(101), main = AXUIElementCreateApplication(102)
+        for failing in [kAXMainWindowAttribute, kAXFocusedWindowAttribute] {
+            var discovered: [AXUIElement] = []
+            var gate = CloseGate()
+            gate.observe([ObservedWindow(1)])
+            XCTAssertThrowsError(try WindowReader.windows(app, discovered: { elements in
+                for element in elements where !discovered.contains(where: { CFEqual($0, element) }) {
+                    discovered.append(element)
+                    gate.observe([ObservedWindow(UInt64(discovered.count + 1), .unknown)])
+                }
+            }, read: { _, attribute in
+                if attribute == kAXWindowsAttribute { return [otherSpace] as CFArray }
+                if attribute == failing { throw WindowReadError.ax(attribute, AXError.cannotComplete.rawValue) }
+                return main
+            }))
+            XCTAssertTrue(discovered.contains { CFEqual($0, otherSpace) })
+            XCTAssertEqual(discovered.count, failing == kAXFocusedWindowAttribute ? 2 : 1)
+            // A later snapshot can omit the window on another Space. Its identity
+            // must survive the failed read and veto a different normal-window close.
+            let pending = try XCTUnwrap(gate.destroyed(1, now: 10, delay: 0.5))
+            XCTAssertFalse(gate.canQuit(token: pending.token, now: 11, snapshot: [], cgHasWindows: false, eligible: true, trusted: true))
         }
     }
     func testFenceRejectsEventDuringSlowRead() {

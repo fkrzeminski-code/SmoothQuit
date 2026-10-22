@@ -1,4 +1,6 @@
-# Design and review — 1.4
+# Design and review
+
+The current [1.6.3 audit](REVIEW-1.6.3.md) keeps the native visual direction and fixes misleading status, hidden selection and Bundle-ID feedback. Earlier design decisions and their validation history follow.
 
 SmoothQuit is a quiet background utility. Its settings should feel like Mac settings, with a small identity that remains recognizable in an 18-point menu bar slot.
 

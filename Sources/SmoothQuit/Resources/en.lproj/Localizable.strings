@@ -232,3 +232,5 @@
 "Window veto: AX snapshot %d, remembered %d" = "Window veto: AX snapshot %d, remembered %d";
 "New window observation incomplete: %@" = "New window observation incomplete: %@";
 "AX window list is empty during discovery; checking readiness again" = "AX window list is empty during discovery; checking readiness again";
+"No apps are allowed to quit. Add an app or change a Never quit rule." = "No apps are allowed to quit. Add an app or change a Never quit rule.";
+"Already added. Select this app in the list to edit its rule." = "Already added. Select this app in the list to edit its rule.";

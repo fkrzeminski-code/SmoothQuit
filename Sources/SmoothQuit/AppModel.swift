@@ -62,7 +62,7 @@ final class AppModel: ObservableObject {
         if !preferences.enabled { return .disabled }
         if preferences.isPaused { return .paused }
         if !trusted { return .needsAccess }
-        if preferences.mode == .include && preferences.rules.isEmpty { return .needsApps }
+        if preferences.mode == .include && !preferences.rules.contains(where: { preferences.reasonExcluded($0.id) == nil }) { return .needsApps }
         return .active
     }
     var isMonitoring: Bool { monitoringState == .active }
@@ -96,7 +96,9 @@ final class AppModel: ObservableObject {
         if let data = defaults.data(forKey: "preferences.v1") {
             if let stored = try? JSONDecoder().decode(Preferences.self, from: data) {
                 var safe = stored; safe.delay = Preferences.boundedDelay(safe.delay)
-                safe.rules = safe.rules.filter { Preferences.validBundleID($0.id) }
+                var seen = Set<String>()
+                safe.rules = safe.rules.filter { Preferences.validBundleID($0.id) && seen.insert($0.id).inserted }
+                for index in safe.rules.indices { safe.rules[index].delay = safe.rules[index].delay.map(Preferences.boundedDelay) }
                 preferences = safe
             } else {
                 preferences = Preferences()
@@ -121,12 +123,12 @@ final class AppModel: ObservableObject {
     func checkPermission() {
         let granted = AXIsProcessTrusted()
         if granted != trusted { trusted = granted; if isStarted { monitor.refresh() } }
+        refreshLoginStatus()
         onChange?(false)
     }
     func refresh() {
         trusted = AXIsProcessTrusted()
-        loginEnabled = SMAppService.mainApp.status == .enabled
-        loginNeedsApproval = SMAppService.mainApp.status == .requiresApproval
+        refreshLoginStatus()
         if isStarted { monitor.refresh() }; onChange?(false)
     }
     func requestAccessibility() {
@@ -138,8 +140,12 @@ final class AppModel: ObservableObject {
         do {
             if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
         } catch { self.error = L("Could not change launch at login: %@", error.localizedDescription) }
-        loginEnabled = SMAppService.mainApp.status == .enabled
-        loginNeedsApproval = SMAppService.mainApp.status == .requiresApproval
+        refreshLoginStatus()
+    }
+    private func refreshLoginStatus() {
+        let status = SMAppService.mainApp.status
+        loginEnabled = status == .enabled
+        loginNeedsApproval = status == .requiresApproval
     }
     func pause(minutes: Int?) {
         preferences.pauseUntil = minutes.map { Date().addingTimeInterval(Double($0) * 60) }
