@@ -81,12 +81,25 @@ enum WindowReader {
         guard error == .success, let result else { throw WindowReadError.ax(attribute, error.rawValue) }
         return result
     }
-    static func windows(_ element: AXUIElement) throws -> [AXUIElement] {
-        let value = try value(element, kAXWindowsAttribute)
+    static func windows(_ element: AXUIElement, read: (AXUIElement, String) throws -> CFTypeRef = value) throws -> [AXUIElement] {
+        let value = try read(element, kAXWindowsAttribute)
         guard CFGetTypeID(value) == CFArrayGetTypeID(), let windows = value as? [AXUIElement],
               windows.allSatisfy({ CFGetTypeID($0) == AXUIElementGetTypeID() }) else { throw WindowReadError.malformed }
         guard windows.count <= 256 else { throw WindowReadError.budget }
-        return windows
+        var result = windows
+        // Catalyst apps can expose a real main/focused window while AXWindows is
+        // successfully empty. These are additive identities, never replacements
+        // for AXWindows or the off-Space ledger.
+        for attribute in [kAXMainWindowAttribute, kAXFocusedWindowAttribute] {
+            let raw: CFTypeRef
+            do { raw = try read(element, attribute) }
+            catch WindowReadError.ax(_, let code) where code == AXError.attributeUnsupported.rawValue || code == AXError.noValue.rawValue { continue }
+            guard CFGetTypeID(raw) == AXUIElementGetTypeID() else { throw WindowReadError.malformed }
+            let window = unsafeBitCast(raw, to: AXUIElement.self)
+            if !result.contains(where: { CFEqual($0, window) }) { result.append(window) }
+        }
+        guard result.count <= 256 else { throw WindowReadError.budget }
+        return result
     }
     static func metadata(_ element: AXUIElement, id: UInt64) throws -> ObservedWindow {
         AXUIElementSetMessagingTimeout(element, 0.12)
@@ -147,6 +160,7 @@ final class Monitor {
         var requestedAt: Double?
         var closeAt: Double?
         var quitID: UUID?
+        var terminationObservation: NSKeyValueObservation?
         init(app: NSRunningApplication, element: AXUIElement, observer: AXObserver, context: ObserverContext) {
             self.app = app; self.element = element; self.observer = observer; self.context = context
         }
@@ -222,10 +236,16 @@ final class Monitor {
         let entry = Diagnostic(bundleID: id, message: message, requested: requested, completed: completed, elapsed: elapsed, summary: summary, quitID: quitID)
         DispatchQueue.main.async { self.onDiagnostic?(entry) }
     }
-    private func remove(_ pid: pid_t) {
+    private func remove(_ pid: pid_t, terminated: Bool = false) {
         attachmentRetries.removeValue(forKey: pid)?.cancel()
         launchObservations.removeValue(forKey: pid)?.invalidate()
         guard let watch = watches.removeValue(forKey: pid) else { return }
+        // Workspace activation can precede the termination notification. If
+        // reconcile already knows the process exited, retain that confirmation.
+        if (terminated || watch.app.isTerminated), let closeAt = watch.closeAt, watch.requestedAt != nil {
+            emit(watch.app.bundleIdentifier ?? "", L("Process exited after a normal Quit request"), elapsed: now - closeAt, completed: true, quitID: watch.quitID)
+        }
+        watch.terminationObservation?.invalidate()
         watch.timer?.cancel(); watch.readRetry?.cancel()
         // Keep the callback context alive until the main run loop has removed its source.
         DispatchQueue.main.async {
@@ -245,11 +265,7 @@ final class Monitor {
     }
     private func workspaceEvent(_ name: Notification.Name, app: NSRunningApplication?) {
         if name == NSWorkspace.didTerminateApplicationNotification, let app {
-            if let watch = watches[app.processIdentifier], watch.app == app,
-               let closeAt = watch.closeAt, watch.requestedAt != nil {
-                emit(app.bundleIdentifier ?? "", L("Process exited after a normal Quit request"), elapsed: now - closeAt, completed: true, quitID: watch.quitID)
-            }
-            remove(app.processIdentifier)
+            if watches[app.processIdentifier]?.app == app { remove(app.processIdentifier, terminated: true) }
         }
         if name == NSWorkspace.activeSpaceDidChangeNotification || name == NSWorkspace.willSleepNotification || name == NSWorkspace.didWakeNotification {
             for watch in watches.values { cancel(watch, reason: L("Cancelled: Space change / sleep / wake")) }
@@ -269,7 +285,9 @@ final class Monitor {
         DispatchQueue.main.async { self.onPermission?(trusted) }
         guard trusted, preferences.enabled, !preferences.isPaused else { removeAll(); return }
         let apps = NSWorkspace.shared.runningApplications
-        let departed = watches.filter { $0.value.app.isTerminated || !apps.contains($0.value.app) }.map(\.key)
+        // runningApplications can drop an app before isTerminated / didTerminate
+        // updates. Keep its watch through that gap to retain the Quit receipt.
+        let departed = watches.filter { $0.value.app.isTerminated }.map(\.key)
         for pid in departed { remove(pid) }
         for app in target.map({ [$0] }) ?? apps {
             guard app.processIdentifier > 0, app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
@@ -365,6 +383,13 @@ final class Monitor {
         }
         let watch = Watch(app: app, element: element, observer: observer, context: callbackContext)
         watches[app.processIdentifier] = watch
+        watch.terminationObservation = app.observe(\.isTerminated, options: [.new]) { [weak self, weak watch] app, _ in
+            guard app.isTerminated, let self, let watch else { return }
+            self.queue.async {
+                guard self.watches[app.processIdentifier] === watch else { return }
+                self.remove(app.processIdentifier, terminated: true)
+            }
+        }
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
         readWhenReady(watch)
     }
@@ -376,8 +401,9 @@ final class Monitor {
             // Calendar can accept AX subscriptions before publishing its main window.
             // An empty AX list alongside a visible CG surface is not a settled snapshot.
             // Reuse bounded startup recovery to seed identities; this never arms Quit.
-            guard snapshot.isEmpty, WindowReader.cgHasWindows(pid: watch.app.processIdentifier) == true else { return }
-            emit(watch.app.bundleIdentifier ?? "", L("AX has no windows yet, but WindowServer shows one; retrying discovery"))
+            guard snapshot.isEmpty,
+                  attempt == 0 || WindowReader.cgHasWindows(pid: watch.app.processIdentifier) == true || !watch.tracked.isEmpty else { return }
+            emit(watch.app.bundleIdentifier ?? "", L("AX window list is empty during discovery; checking readiness again"))
         } else if !watch.readWasTransient { return }
         if let delay = Self.recoveryDelay(attempt: attempt) {
             let work = DispatchWorkItem { [weak self, weak watch] in
@@ -391,7 +417,7 @@ final class Monitor {
         }
     }
     @discardableResult
-    private func read(_ watch: Watch) -> [ObservedWindow]? {
+    private func read(_ watch: Watch, cancelOnFailure: Bool = true) -> [ObservedWindow]? {
         let started = now
         watch.readWasTransient = false
         do {
@@ -406,37 +432,41 @@ final class Monitor {
             }
             for element in elements {
                 guard now - started < 0.35 else { throw WindowReadError.budget }
-                guard let index = watch.tracked.firstIndex(where: { CFEqual($0.element, element) }) else {
-                    throw WindowReadError.malformed
-                }
-                let metadata = try WindowReader.metadata(element, id: watch.tracked[index].id)
-                // A later panel's failed read must not erase already validated identity.
-                watch.gate.observe([metadata])
-                let context = Unmanaged.passUnretained(watch.context).toOpaque()
-                if !watch.tracked[index].subscribed {
-                    do { try WindowReader.observeDestruction(watch.observer, element: element, context: context) }
-                    catch WindowReadError.subscription(let code) where code == AXError.notificationUnsupported.rawValue {
-                        // App-wide observation is already required. A window stays in
-                        // the ledger until an actual destruction callback identifies it.
-                        emit(watch.app.bundleIdentifier ?? "", L("Window uses app-level destruction observation"))
-                    }
-                    watch.tracked[index].subscribed = true
-                    for name in [kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification] {
-                        _ = AXObserverAddNotification(watch.observer, element, name as CFString, context)
-                    }
-                }
-                snapshot.append(metadata)
+                snapshot.append(try track(element, watch: watch))
             }
             guard now - started < 0.35 else { throw WindowReadError.budget }
             watch.gate.observe(snapshot)
             return snapshot
         } catch {
             watch.readWasTransient = (error as? WindowReadError)?.isTransient == true
-            cancel(watch, reason: L("Cancelled: uncertain window read"))
+            if cancelOnFailure { cancel(watch, reason: L("Cancelled: uncertain window read")) }
             emit(watch.app.bundleIdentifier ?? "", L("Quit blocked. %@", String(describing: error)), elapsed: now - started,
                  summary: L("Kept running: window state could not be confirmed"))
             return nil
         }
+    }
+    @discardableResult
+    private func track(_ element: AXUIElement, watch: Watch) throws -> ObservedWindow {
+        if !watch.tracked.contains(where: { CFEqual($0.element, element) }) {
+            nextID &+= 1
+            watch.tracked.append((nextID, element, false))
+            watch.gate.observe([ObservedWindow(nextID, .unknown)])
+        }
+        guard let index = watch.tracked.firstIndex(where: { CFEqual($0.element, element) }) else { throw WindowReadError.malformed }
+        let metadata = try WindowReader.metadata(element, id: watch.tracked[index].id)
+        watch.gate.observe([metadata])
+        if !watch.tracked[index].subscribed {
+            let context = Unmanaged.passUnretained(watch.context).toOpaque()
+            do { try WindowReader.observeDestruction(watch.observer, element: element, context: context) }
+            catch WindowReadError.subscription(let code) where code == AXError.notificationUnsupported.rawValue {
+                emit(watch.app.bundleIdentifier ?? "", L("Window uses app-level destruction observation"))
+            }
+            watch.tracked[index].subscribed = true
+            for name in [kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification] {
+                _ = AXObserverAddNotification(watch.observer, element, name as CFString, context)
+            }
+        }
+        return metadata
     }
     private func event(_ observer: AXObserver, element: AXUIElement, name: String, at time: Double, revision: UInt64) {
         guard let watch = watches.values.first(where: { CFEqual($0.observer, observer) }), !watch.app.isTerminated else { return }
@@ -445,6 +475,13 @@ final class Monitor {
             emit(id, L("AX: new window created"))
             cancel(watch, reason: L("Cancelled: a new window was created"))
             watch.requestedAt = nil; watch.closeAt = nil; watch.quitID = nil
+            // Creation supplies the window itself before AXWindows necessarily lists it.
+            // Observe that identity now so a fast close cannot be lost to startup timing.
+            AXUIElementSetMessagingTimeout(element, 0.12)
+            if (try? WindowReader.value(element, kAXRoleAttribute)) as? String == kAXWindowRole {
+                do { try track(element, watch: watch) }
+                catch { emit(id, L("New window observation incomplete: %@", String(describing: error))) }
+            }
             readWhenReady(watch)
         } else if name == kAXUIElementDestroyedNotification {
             guard watch.requestedAt == nil else { return }
@@ -474,13 +511,13 @@ final class Monitor {
         } else if name == kAXWindowMiniaturizedNotification || name == kAXWindowDeminiaturizedNotification {
             cancel(watch, reason: L("Cancelled: window minimized / restored"))
             readWhenReady(watch)
-        } else if watch.gate.pending == nil {
+        } else if watch.gate.pending == nil && watch.requestedAt == nil {
             // Focus changes accompany native closing animations. The timer already
             // guarantees a fresh AX read; an eager read here can fail while AppKit is busy.
             readWhenReady(watch)
         }
     }
-    private func verify(_ watch: Watch, pending: CloseGate.Pending, revision: UInt64) {
+    private func verify(_ watch: Watch, pending: CloseGate.Pending, revision: UInt64, attempt: Int = 0) {
         guard watches[watch.app.processIdentifier] === watch, watch.gate.pending == pending else { return }
         let id = watch.app.bundleIdentifier ?? ""
         let started = now
@@ -497,11 +534,25 @@ final class Monitor {
             block(L("Quit blocked: permissions, rules or process identity changed")); return
         }
         guard preferences.monitorHidden || !watch.app.isHidden else { block(L("Quit blocked: app is hidden"), summary: L("Kept running: the app is hidden")); return }
-        guard let snapshot = read(watch) else { return }
+        guard let snapshot = read(watch, cancelOnFailure: false) else {
+            // A busy AX server must not permanently lose an already confirmed close.
+            // Keep every fence and the original deadline; recovery is bounded, not polling.
+            if watch.readWasTransient, attempt < 2, now - pending.deadline < 0.35 {
+                let work = DispatchWorkItem { [weak self, weak watch] in
+                    guard let self, let watch else { return }
+                    self.verify(watch, pending: pending, revision: revision, attempt: attempt + 1)
+                }
+                watch.timer = work
+                emit(id, L("AX busy after close; verifying again in 100 ms (%d/2)", attempt + 1), elapsed: now - pending.closedAt)
+                queue.asyncAfter(deadline: .now() + 0.1, execute: work)
+            } else { cancel(watch, reason: L("Cancelled: uncertain window read")) }
+            return
+        }
         if !preferences.monitorMinimized && snapshot.contains(where: \.minimized) {
             block(L("Quit blocked: minimized-window monitoring is disabled"), summary: L("Kept running: a minimized window remains")); return
         }
         guard snapshot.isEmpty && watch.gate.windows.isEmpty else {
+            emit(id, L("Window veto: AX snapshot %d, remembered %d", snapshot.count, watch.gate.windows.count))
             block(L("Quit blocked: a normal, auxiliary or unconfirmed off-Space window remains"), summary: L("Kept running: an open or remembered window remains")); return
         }
         let cg = WindowReader.cgHasWindows(pid: watch.app.processIdentifier)

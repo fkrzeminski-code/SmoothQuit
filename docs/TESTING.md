@@ -136,3 +136,21 @@ The ordinary suite passed: 65 tests, 6 interactive tests skipped, zero failures.
 In the packaged app, CUA opened the real SmoothQuit application menu with About, Check for Updates, Settings and Quit; Advanced expanded and collapsed through its accessible label, revealing the two existing window toggles. The red close button left process 49462 running. Coordinate input returned `noWindowsAvailable`, so clicking the blank portion of the header was not verified with a physical pointer; the label's full-width rectangular hit region was reviewed in source. The temporary build required Accessibility again; no target-app Quit tests were claimed for this patch. Existing window-monitor logic was unchanged.
 
 Ponytail Full review: root cause fixed in the shared Settings presentation/close path, no foreground polling or focus hooks, native DisclosureGroup retained, no dependencies added.
+
+## 1.6.2 — Calendar, WhatsApp and Excel investigation (2026-10-22)
+
+The installed 1.6.1 had Accessibility, enabled automation and a 0.5 s delay. Its retained diagnostics showed confirmed normal-window closes followed by a window/ledger veto for Calendar, WhatsApp and Excel; Excel also returned AX cannotComplete (-25204). The read-only inspector reported an empty current list plus a remembered Calendar window. This is evidence of disagreement between discovery sources, not proof that an omitted window can safely be discarded.
+
+A title-free opt-in AX inventory reproduced WhatsApp's AXWindows succeeding with zero entries while AXMainWindow and AXFocusedWindow each returned an AXStandardWindow. The fix adds those public references, observes the creation payload before AXWindows catches up, and preserves the strict destruction ledger. Two regression tests cover empty-list supplementation, duplicate identity removal, retention of a different Space's window, malformed payloads and AX failures that must not be hidden. The ordinary suite has 68 tests: 61 passed, 7 interactive tests skipped.
+
+Real production-monitor tests, operated through CUA with the installed monitor disabled temporarily:
+
+| App | Quit requested after close | Confirmed exit after close | Result |
+| --- | --- | --- | --- |
+| Calendar | 0.570 s | 0.600 s | Passed |
+| WhatsApp | 0.578 s | 1.664 s | Passed |
+| Excel, newly created blank Book1 | 0.567 s | 0.715 s | Passed |
+
+No existing workbooks were opened or closed, and no WhatsApp conversations were opened or sent. Only the main Calendar window was closed. KVO termination confirmation was added after WhatsApp's process exited but the original workspace-based completion expectation timed out; the final WhatsApp test then passed in full. The Excel run preceded this completion-observation addition; its discovery and normal-Quit code matched the final behavior. The installed app's Enable setting was restored after the tests.
+
+Earlier attempts are not counted as passes: the initial Calendar setup timed out; cold WhatsApp was closed before AX attachment recovered and timed out; another WhatsApp attempt exposed the empty AXWindows list; subsequent attempts requested Quit but timed out waiting for the missing exit notification. These failures led to the fixes above. Very fast closing before any usable AX observation is established remains a conservative no-Quit case. Actual switching across Spaces and preservation of unsaved Excel documents were not tested in this session. Existing simulated multi-Space and cancellation checks passed. Runtime testing used the production Monitor in XCTest, not a newly permissioned packaged .app. The final bundle is built and signature-verified without replacing /Applications.

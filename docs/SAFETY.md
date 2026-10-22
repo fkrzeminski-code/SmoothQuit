@@ -5,13 +5,13 @@ SmoothQuit favors leaving an app running over guessing that its windows are gone
 ## Decision flow
 
 1. `NSWorkspace` discovers eligible regular applications. Include/Exclude, per-app rules, pause, enable and self/system protection filter them.
-2. `AXObserver` tracks creation and destruction. Reads run on one serial worker queue, away from the main UI thread. Every returned window identity enters a ledger before metadata is queried. The ledger removes an entry only after destruction of that exact element, never merely because it disappeared from a snapshot.
+2. `AXObserver` tracks creation and destruction. Reads run on one serial worker queue, away from the main UI thread. Window discovery adds AXMainWindow and AXFocusedWindow to AXWindows, deduplicating identities without replacing the window list. Creation notifications seed the reported window directly, even before AXWindows publishes it. Every returned window identity enters a ledger before metadata is queried. The ledger removes an entry only after destruction of that exact element, never merely because it disappeared from a snapshot.
 3. Destruction of a known normal window arms a token and monotonic deadline. An auxiliary window cannot arm a Quit. Its confirmed destruction may preserve an already armed deadline.
 4. A new target-app window cancels pending Quit. Target structural events invalidate target decisions; Space changes, sleep/wake, settings updates and disabling invalidate globally. Ordinary focus changes and unrelated apps do not cancel a valid countdown.
 5. At the deadline, AX must report no windows, the identity ledger must be empty, and CoreGraphics must not report a visible layer-zero window. Process identity, eligibility, Accessibility trust, queue lateness and read duration are checked again. A final AX read and event-revision check precede `NSRunningApplication.terminate()`.
 6. The request is sent once. The app can show its standard save dialog, refuse termination, or take time to exit. The history distinguishes request and later observed exit.
 
-The default delay is 0.5 seconds, configurable from 0.2 to 2 seconds. It begins at the received destruction event, not the mouse click. A late queue or slow verification cancels instead of adding an unreported multi-second close delay.
+The default delay is 0.5 seconds, configurable from 0.2 to 2 seconds. It begins at the received destruction event, not the mouse click. A transient AX error during verification allows at most two retries 100 ms apart, while keeping the original deadline and all event fences. A queue more than 500 ms late or a slow successful verification cancels instead of adding an unreported multi-second close delay. Missing windows are never discarded merely to make Quit succeed.
 
 ## Transient AX failures
 

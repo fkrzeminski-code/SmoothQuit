@@ -227,3 +227,8 @@
 
 "Expanded" = "Rozwinięte";
 "Collapsed" = "Zwinięte";
+
+"AX busy after close; verifying again in 100 ms (%d/2)" = "AX zajęte po zamknięciu; ponowna kontrola za 100 ms (%d/2)";
+"Window veto: AX snapshot %d, remembered %d" = "Blokada okien: bieżące AX %d, zapamiętane %d";
+"New window observation incomplete: %@" = "Niepełna obserwacja nowego okna: %@";
+"AX window list is empty during discovery; checking readiness again" = "Lista okien AX jest pusta podczas wykrywania; ponowne sprawdzenie gotowości";

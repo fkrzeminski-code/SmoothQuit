@@ -45,9 +45,10 @@ Finder is protected by default. SmoothQuit always protects its own process. A no
 - **Updates:** Check for Updates manually, or check once at launch. Only a newer stable release triggers a local macOS notification, subject to your notification settings and Focus. Click it to view the release; downloads and installation remain your choice. No background polling or automatic installation.
 - **Explain a running app:** Activity provides an explicit, read-only window/rule inspection without restarting monitoring or sending Quit.
 - **Native settings menu:** opening Settings enables the standard SmoothQuit app menu (About, updates, settings and Quit) and a Dock icon. Closing Settings returns to background-only operation. Switching to another app gives that app its usual menu. Click the Advanced label or the space beside it to expand its options.
+- **Broader native window discovery:** combines AXWindows with AXMainWindow and AXFocusedWindow, including apps whose AXWindows list omits their main window. A new-window notification is observed directly, before the list catches up.
 - **Quick exceptions and reports:** Choose “Never Auto-Quit [app]” in the status menu to add a persistent Never quit rule for the last regular foreground app, without changing Include/Exclude mode. Copy Diagnostic Report copies version, macOS, rules and up to 20 filtered events to the clipboard; it never sends them.
 
-Release 1.6.1 is published as a regular GitHub release. This does not change its ad hoc signing or imply Apple notarization.
+Release 1.6.2 is published as a regular GitHub release. This does not change its ad hoc signing or imply Apple notarization.
 
 ## Privacy
 
@@ -74,7 +75,7 @@ swift test
 ./scripts/build.sh
 ```
 
-Output: `Builds/Release-1.6.1/SmoothQuit.app` and `SmoothQuit.dmg`, with build/test/signature reports and a source snapshot. The script does not install or launch the app. Build products are ignored by Git.
+Output: `Builds/Release-1.6.2/SmoothQuit.app` and `SmoothQuit.dmg`, with build/test/signature reports and a source snapshot. The script does not install or launch the app. Build products are ignored by Git.
 
 Open `Package.swift` in Xcode to work on the project. SwiftUI and AppKit provide the interface; AXObserver, NSWorkspace and CoreGraphics provide observation. There are no third-party runtime packages.
 

@@ -39,8 +39,8 @@ final class IntegrationTests: XCTestCase {
     /// Mail/Calendar’s main window or a disposable Preview document after LIVE READY.
     func testLiveMailOrPreviewCloseAndQuit() throws {
         guard let id = ProcessInfo.processInfo.environment["SMOOTHQUIT_LIVE_APP"],
-              ["com.apple.mail", "com.apple.Preview", "com.apple.iCal"].contains(id) else {
-            throw XCTSkip("Interactive Mail/Preview/Calendar test requires operator authorization")
+              ["com.apple.mail", "com.apple.Preview", "com.apple.iCal", "net.whatsapp.WhatsApp", "com.microsoft.Excel"].contains(id) else {
+            throw XCTSkip("Interactive application test requires operator authorization")
         }
         _ = NSApplication.shared // Bootstrap the GUI event connection for live AX callbacks.
         XCTAssertTrue(AXIsProcessTrusted())
@@ -90,6 +90,68 @@ final class IntegrationTests: XCTestCase {
         prefs.enabled = false; monitor.update(prefs)
         XCTAssertFalse(app.isTerminated)
         XCTAssertFalse(try WindowReader.windows(AXUIElementCreateApplication(app.processIdentifier)).isEmpty)
+    }
+    func testMainAndFocusedWindowSupplementAnEmptyCatalystWindowList() throws {
+        let app = AXUIElementCreateApplication(100)
+        let window = AXUIElementCreateApplication(101) // Opaque identity; no IPC in this fixture.
+        let result = try WindowReader.windows(app) { _, attribute in
+            if attribute == kAXWindowsAttribute { return [] as CFArray }
+            return window
+        }
+        XCTAssertEqual(result.count, 1) // Main/focused point to the same window.
+        XCTAssertTrue(CFEqual(result[0], window))
+    }
+    func testSupplementalWindowNeverReplacesOtherSpaceOrMasksAXFailure() throws {
+        let app = AXUIElementCreateApplication(100)
+        let offSpace = AXUIElementCreateApplication(101), main = AXUIElementCreateApplication(102)
+        let result = try WindowReader.windows(app) { _, attribute in
+            if attribute == kAXWindowsAttribute { return [offSpace] as CFArray }
+            return main
+        }
+        XCTAssertEqual(result.count, 2)
+        XCTAssertTrue(result.contains { CFEqual($0, offSpace) })
+        for error in [AXError.cannotComplete, .apiDisabled, .invalidUIElement] {
+            XCTAssertThrowsError(try WindowReader.windows(app) { _, attribute in
+                if attribute == kAXWindowsAttribute { return [] as CFArray }
+                throw WindowReadError.ax(attribute, error.rawValue)
+            })
+        }
+        XCTAssertThrowsError(try WindowReader.windows(app) { _, attribute in
+            if attribute == kAXWindowsAttribute { throw WindowReadError.ax(attribute, AXError.cannotComplete.rawValue) }
+            return main
+        })
+        for missing in [AXError.noValue, .attributeUnsupported] {
+            XCTAssertTrue(try WindowReader.windows(app) { _, attribute in
+                if attribute == kAXWindowsAttribute { return [] as CFArray }
+                throw WindowReadError.ax(attribute, missing.rawValue)
+            }.isEmpty)
+        }
+        XCTAssertThrowsError(try WindowReader.windows(app) { _, attribute in
+            if attribute == kAXWindowsAttribute { return [] as CFArray }
+            return "invalid window payload" as CFString
+        })
+    }
+    func testLiveWindowInventoryWithoutTitles() throws {
+        guard let id = ProcessInfo.processInfo.environment["SMOOTHQUIT_INVENTORY_APP"] else { throw XCTSkip("Read-only opt-in window inventory") }
+        _ = NSApplication.shared
+        guard AXIsProcessTrusted() else { throw XCTSkip("Test host lacks Accessibility") }
+        let app = try XCTUnwrap(NSRunningApplication.runningApplications(withBundleIdentifier: id).first)
+        let element = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetMessagingTimeout(element, 0.12)
+        for attribute in [kAXWindowsAttribute, kAXMainWindowAttribute, kAXFocusedWindowAttribute, kAXChildrenAttribute] {
+            var raw: CFTypeRef?
+            let error = AXUIElementCopyAttributeValue(element, attribute as CFString, &raw)
+            print("INVENTORY \(attribute): error=\(error.rawValue)")
+            let children: [AXUIElement]
+            if let list = raw as? [AXUIElement] { children = list }
+            else if let raw, CFGetTypeID(raw) == AXUIElementGetTypeID() { children = [unsafeBitCast(raw, to: AXUIElement.self)] }
+            else { continue }
+            for (index, child) in children.prefix(256).enumerated() {
+                let role = (try? WindowReader.value(child, kAXRoleAttribute)) as? String ?? "unreadable"
+                let subrole = role == kAXWindowRole ? ((try? WindowReader.value(child, kAXSubroleAttribute)) as? String ?? "unreadable") : "—"
+                print("INVENTORY child \(index) role=\(role) subrole=\(subrole)")
+            }
+        }
     }
     func testFenceRejectsEventDuringSlowRead() {
         let fence = EventFence(); let revision = fence.snapshot()

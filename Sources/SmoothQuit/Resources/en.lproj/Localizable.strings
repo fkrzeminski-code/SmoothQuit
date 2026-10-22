@@ -227,3 +227,8 @@
 
 "Expanded" = "Expanded";
 "Collapsed" = "Collapsed";
+
+"AX busy after close; verifying again in 100 ms (%d/2)" = "AX busy after close; verifying again in 100 ms (%d/2)";
+"Window veto: AX snapshot %d, remembered %d" = "Window veto: AX snapshot %d, remembered %d";
+"New window observation incomplete: %@" = "New window observation incomplete: %@";
+"AX window list is empty during discovery; checking readiness again" = "AX window list is empty during discovery; checking readiness again";
