@@ -58,7 +58,7 @@ public struct ObservedWindow: Equatable {
     }
 }
 
-/// No snapshot can silently discard a known window. Only its destruction can.
+/// Missing snapshots retain identities. Explicit invalidation cancels any countdown.
 public struct CloseGate {
     public struct Pending: Equatable {
         public let token: UInt64
@@ -72,6 +72,10 @@ public struct CloseGate {
 
     public mutating func cancel() { generation &+= 1; pending = nil }
     public mutating func created() { cancel() }
+    public mutating func retireInvalid(_ id: UInt64) {
+        guard windows.removeValue(forKey: id) != nil else { return }
+        cancel() // Recovery alone must never arm or revive Quit.
+    }
     public mutating func observe(_ snapshot: [ObservedWindow]) {
         if snapshot.contains(where: { windows[$0.id] == nil }) { cancel() }
         for window in snapshot { windows[window.id] = window }

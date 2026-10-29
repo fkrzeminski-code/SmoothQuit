@@ -234,3 +234,6 @@
 "AX window list is empty during discovery; checking readiness again" = "AX window list is empty during discovery; checking readiness again";
 "No apps are allowed to quit. Add an app or change a Never quit rule." = "No apps are allowed to quit. Add an app or change a Never quit rule.";
 "Already added. Select this app in the list to edit its rule." = "Already added. Select this app in the list to edit its rule.";
+"Normal window observed; monitoring resumed after Quit request" = "Normal window observed; monitoring resumed after Quit request";
+"Recovered invalid window identity; previous countdown cancelled" = "Recovered invalid window identity; previous countdown cancelled";
+"Quit cancelled: window identities changed during verification" = "Quit cancelled: window identities changed during verification";

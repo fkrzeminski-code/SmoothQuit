@@ -75,6 +75,11 @@ enum WindowReadError: Error, CustomStringConvertible {
 
 /// Public APIs only. Never reads window titles, documents, keyboard events or images.
 enum WindowReader {
+    static func isInvalid(_ element: AXUIElement, read: (AXUIElement, String) throws -> CFTypeRef = value) -> Bool {
+        do { _ = try read(element, kAXRoleAttribute); return false }
+        catch WindowReadError.ax(_, let code) { return code == AXError.invalidUIElement.rawValue }
+        catch { return false }
+    }
     static func value(_ element: AXUIElement, _ attribute: String) throws -> CFTypeRef {
         var result: CFTypeRef?
         let error = AXUIElementCopyAttributeValue(element, attribute as CFString, &result)
@@ -283,7 +288,7 @@ final class Monitor {
         let existing = app.flatMap { watches[$0.processIdentifier] }
         reconcile(app: app)
         if let watch = existing, watches[watch.app.processIdentifier] === watch,
-           watch.requestedAt == nil, watch.gate.pending == nil {
+           watch.gate.pending == nil {
             readWhenReady(watch)
         }
     }
@@ -320,7 +325,7 @@ final class Monitor {
                 let existing = self.watches[pid]
                 self.reconcile(app: app)
                 if let watch = existing, self.watches[pid] === watch, watch.app == app,
-                   watch.readWasTransient, watch.gate.pending == nil, watch.requestedAt == nil {
+                   watch.readWasTransient, watch.gate.pending == nil {
                     self.readWhenReady(watch)
                 }
             }
@@ -415,7 +420,7 @@ final class Monitor {
         if let delay = Self.recoveryDelay(attempt: attempt) {
             let work = DispatchWorkItem { [weak self, weak watch] in
                 guard let self, let watch, self.watches[watch.app.processIdentifier] === watch,
-                      watch.gate.pending == nil, watch.requestedAt == nil else { return }
+                      watch.gate.pending == nil else { return }
                 self.readWhenReady(watch, attempt: attempt + 1)
             }
             watch.readRetry = work
@@ -429,6 +434,7 @@ final class Monitor {
         watch.readWasTransient = false
         do {
             let elements = try WindowReader.windows(watch.element, discovered: { self.seed($0, watch: watch) })
+            retireInvalid(watch, absentFrom: elements, started: started)
             var snapshot: [ObservedWindow] = []
             for element in elements {
                 guard now - started < 0.35 else { throw WindowReadError.budget }
@@ -436,6 +442,12 @@ final class Monitor {
             }
             guard now - started < 0.35 else { throw WindowReadError.budget }
             watch.gate.observe(snapshot)
+            // A refused Quit can leave the process alive. A verified normal window
+            // starts a new interaction even when its creation notification was lost.
+            if watch.requestedAt != nil, snapshot.contains(where: { $0.kind == .normal }) {
+                watch.requestedAt = nil; watch.closeAt = nil; watch.quitID = nil
+                emit(watch.app.bundleIdentifier ?? "", L("Normal window observed; monitoring resumed after Quit request"))
+            }
             return snapshot
         } catch {
             watch.readWasTransient = (error as? WindowReadError)?.isTransient == true
@@ -450,6 +462,16 @@ final class Monitor {
             nextID &+= 1
             watch.tracked.append((nextID, element, false))
             watch.gate.observe([ObservedWindow(nextID, .unknown)])
+        }
+    }
+    private func retireInvalid(_ watch: Watch, absentFrom elements: [AXUIElement], started: Double) {
+        for window in watch.tracked where !elements.contains(where: { CFEqual($0, window.element) }) {
+            guard now - started < 0.35 else { return } // Unvisited identities remain vetoes.
+            AXUIElementSetMessagingTimeout(window.element, 0.12)
+            guard WindowReader.isInvalid(window.element) else { continue }
+            watch.gate.retireInvalid(window.id)
+            watch.tracked.removeAll { $0.id == window.id }
+            emit(watch.app.bundleIdentifier ?? "", L("Recovered invalid window identity; previous countdown cancelled"))
         }
     }
     @discardableResult
@@ -493,8 +515,12 @@ final class Monitor {
                 // Neither can arm Quit or invalidate an already confirmed window close.
                 return
             }
-            let window = watch.tracked.remove(at: index)
+            let window = watch.tracked[index]
             let wasMinimized = watch.gate.windows[window.id]?.minimized ?? false
+            // Recover older dead references before processing this fresh close.
+            // The confirmed close below supplies its own full delay and checks.
+            retireInvalid(watch, absentFrom: [element], started: now)
+            watch.tracked.removeAll { $0.id == window.id }
             guard let pending = watch.gate.destroyed(window.id, now: time, delay: preferences.delay(for: id)) else {
                 if watch.gate.pending != nil { emit(id, L("Auxiliary window closed; keeping the countdown")) }
                 return
@@ -514,7 +540,7 @@ final class Monitor {
         } else if name == kAXWindowMiniaturizedNotification || name == kAXWindowDeminiaturizedNotification {
             cancel(watch, reason: L("Cancelled: window minimized / restored"))
             readWhenReady(watch)
-        } else if watch.gate.pending == nil && watch.requestedAt == nil {
+        } else if watch.gate.pending == nil {
             // Focus changes accompany native closing animations. The timer already
             // guarantees a fresh AX read; an eager read here can fail while AppKit is busy.
             readWhenReady(watch)
@@ -550,6 +576,9 @@ final class Monitor {
                 queue.asyncAfter(deadline: .now() + 0.1, execute: work)
             } else { cancel(watch, reason: L("Cancelled: uncertain window read")) }
             return
+        }
+        guard watch.gate.pending == pending else {
+            block(L("Quit cancelled: window identities changed during verification")); return
         }
         if !preferences.monitorMinimized && snapshot.contains(where: \.minimized) {
             block(L("Quit blocked: minimized-window monitoring is disabled"), summary: L("Kept running: a minimized window remains")); return

@@ -5,6 +5,39 @@ import SmoothQuitCore
 @testable import SmoothQuit
 
 final class IntegrationTests: XCTestCase {
+    func testLiveRepeatedWhatsAppQuitWithoutMonitorRestart() throws {
+        guard ProcessInfo.processInfo.environment["SMOOTHQUIT_LIVE_REPEAT"] == "1" else {
+            throw XCTSkip("Requires operator-authorized WhatsApp main-window closes")
+        }
+        _ = NSApplication.shared
+        guard AXIsProcessTrusted() else { throw XCTSkip("Test host lacks Accessibility") }
+        let monitor = Monitor()
+        var prefs = Preferences(); prefs.rules = [AppRule(id: "net.whatsapp.WhatsApp", name: "WhatsApp")]
+        let requests = expectation(description: "Three normal Quit requests"); requests.expectedFulfillmentCount = 3
+        let exits = expectation(description: "Three confirmed exits"); exits.expectedFulfillmentCount = 3
+        monitor.onDiagnostic = { entry in
+            guard entry.bundleID == "net.whatsapp.WhatsApp" else { return }
+            print("REPEAT: \(entry.message) elapsed=\(entry.elapsed ?? -1)"); fflush(stdout)
+            if entry.requested { XCTAssertGreaterThanOrEqual(entry.elapsed ?? 0, 0.5); requests.fulfill() }
+            if entry.completed { exits.fulfill() }
+        }
+        monitor.start(preferences: prefs)
+        defer { prefs.enabled = false; monitor.update(prefs) }
+        print("REPEAT READY: open and close only WhatsApp's main window three times; wait for each exit before reopening"); fflush(stdout)
+        wait(for: [requests, exits], timeout: 600)
+    }
+    func testOnlyExplicitInvalidElementCanRetireAMissingWindow() {
+        let element = AXUIElementCreateApplication(100)
+        for code in [AXError.cannotComplete, .apiDisabled, .noValue, .attributeUnsupported, .failure] {
+            XCTAssertFalse(WindowReader.isInvalid(element, read: { _, attribute in
+                throw WindowReadError.ax(attribute, code.rawValue)
+            }))
+        }
+        XCTAssertFalse(WindowReader.isInvalid(element, read: { _, _ in kAXWindowRole as CFString }))
+        XCTAssertTrue(WindowReader.isInvalid(element, read: { _, attribute in
+            throw WindowReadError.ax(attribute, AXError.invalidUIElement.rawValue)
+        }))
+    }
     /// Operator scenarios: retain a second window, disable during a countdown,
     /// or reopen a window before the configured deadline. Only blank test windows.
     func testLiveWindowVetoOrDisableDuringCountdown() throws {

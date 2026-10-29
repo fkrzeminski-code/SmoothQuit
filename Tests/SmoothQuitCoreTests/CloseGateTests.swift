@@ -2,6 +2,29 @@ import XCTest
 @testable import SmoothQuitCore
 
 final class CloseGateTests: XCTestCase {
+    func testMissedDestructionRecoversWithoutRestartAndPreservesOtherSpace() throws {
+        var gate = CloseGate()
+        for cycle in 0..<100 {
+            let stale = UInt64(cycle * 3 + 1), current = stale + 1, offSpace = stale + 2
+            gate.observe([ObservedWindow(stale), ObservedWindow(current), ObservedWindow(offSpace)])
+            gate.retireInvalid(stale) // Public AX explicitly invalidated the old identity.
+            XCTAssertNil(gate.pending) // Recovery cannot trigger Quit.
+            let first = try XCTUnwrap(gate.destroyed(current, now: 10, delay: 0.5))
+            XCTAssertFalse(gate.canQuit(token: first.token, now: 11, snapshot: [], cgHasWindows: false, eligible: true, trusted: true))
+            let last = try XCTUnwrap(gate.destroyed(offSpace, now: 12, delay: 0.5))
+            XCTAssertFalse(gate.canQuit(token: last.token, now: 12.49, snapshot: [], cgHasWindows: false, eligible: true, trusted: true))
+            XCTAssertTrue(gate.canQuit(token: last.token, now: 12.5, snapshot: [], cgHasWindows: false, eligible: true, trusted: true))
+        }
+    }
+    func testInvalidIdentityRecoveryCancelsExistingCountdown() throws {
+        var gate = CloseGate()
+        gate.observe([ObservedWindow(1), ObservedWindow(2)])
+        let pending = try XCTUnwrap(gate.destroyed(1, now: 10, delay: 0.5))
+        gate.retireInvalid(2)
+        XCTAssertTrue(gate.windows.isEmpty)
+        XCTAssertNil(gate.pending)
+        XCTAssertFalse(gate.canQuit(token: pending.token, now: 11, snapshot: [], cgHasWindows: false, eligible: true, trusted: true))
+    }
     private func closed() -> (CloseGate, CloseGate.Pending) {
         var gate = CloseGate()
         gate.observe([ObservedWindow(1)])

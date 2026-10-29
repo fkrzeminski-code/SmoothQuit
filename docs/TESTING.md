@@ -168,3 +168,15 @@ Real production-monitor tests, operated through CUA with the installed monitor d
 No existing workbooks were opened or closed, and no WhatsApp conversations were opened or sent. Only the main Calendar window was closed. KVO termination confirmation was added after WhatsApp's process exited but the original workspace-based completion expectation timed out; the final WhatsApp test then passed in full. The Excel run preceded this completion-observation addition; its discovery and normal-Quit code matched the final behavior. The installed app's Enable setting was restored after the tests.
 
 Earlier attempts are not counted as passes: the initial Calendar setup timed out; cold WhatsApp was closed before AX attachment recovered and timed out; another WhatsApp attempt exposed the empty AXWindows list; subsequent attempts requested Quit but timed out waiting for the missing exit notification. These failures led to the fixes above. Very fast closing before any usable AX observation is established remains a conservative no-Quit case. Actual switching across Spaces and preservation of unsaved Excel documents were not tested in this session. Existing simulated multi-Space and cancellation checks passed. Runtime testing used the production Monitor in XCTest, not a newly permissioned packaged .app. The final bundle is built and signature-verified without replacing /Applications.
+
+## 1.6.4 — recovery without Disable / Enable (2026-10-29)
+
+See [the 1.6.4 review](REVIEW-1.6.4.md) for the exact recovery criteria, test boundaries, failed initial attempt, and three measured live WhatsApp request/exit pairs. Ordinary validation: **76 tests, 67 passed, 9 opt-in tests skipped, zero failures**. The production Monitor additionally completed three WhatsApp quit/exit cycles in one test without resetting observation. A deterministic test exercises 100 stale-reference recovery cycles while preserving an off-Space veto.
+
+The repeat test is opt-in, requires an Accessibility-authorized test host and operator permission to close WhatsApp's main window, and never reads conversations:
+
+```sh
+SMOOTHQUIT_LIVE_REPEAT=1 swift test --filter IntegrationTests/testLiveRepeatedWhatsAppQuitWithoutMonitorRestart
+```
+
+Temporarily disable an independently running SmoothQuit to avoid two monitors. After `REPEAT READY`, open and close the main WhatsApp window three times, waiting for each confirmed exit before reopening. Restore the installed monitor afterward. The 600-second operator timeout does not change the production 0.5-second Quit delay.
