@@ -207,6 +207,7 @@ final class CloseGateTests: XCTestCase {
     }
     func testValidationAndDelayBounds() {
         XCTAssertTrue(Preferences.validBundleID("com.apple.TextEdit"))
+        XCTAssertTrue(Preferences.validBundleID("com.example.my_game")) // Real apps ship non-compliant IDs.
         for id in ["", "foo", "com..app", "com.a b", "../app", "com.app\n"] { XCTAssertFalse(Preferences.validBundleID(id)) }
         XCTAssertEqual(Preferences.boundedDelay(-1), 0.2); XCTAssertEqual(Preferences.boundedDelay(9), 2)
         XCTAssertEqual(Preferences.boundedDelay(.nan), 0.5)

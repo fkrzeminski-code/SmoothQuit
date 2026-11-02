@@ -231,12 +231,15 @@ final class Monitor {
             guard settingsFence.snapshot() == revision else { return }
             self.preferences = value
             self.wakeTimer?.cancel()
-            self.removeAll()
+            // Cancel decisions, but keep watches and their identity ledgers: a fresh
+            // AX read cannot see windows on other Spaces. reconcile drops ineligible apps.
+            for watch in self.watches.values { self.cancel(watch, reason: L("Cancelled: settings changed")) }
             self.reconcile()
             if let until = value.pauseUntil, until > Date() {
                 let work = DispatchWorkItem { [weak self] in self?.reconcile() }
                 self.wakeTimer = work
-                self.queue.asyncAfter(deadline: .now() + until.timeIntervalSinceNow, execute: work)
+                // Wall time keeps counting during sleep; a pause must end on the clock.
+                self.queue.asyncAfter(wallDeadline: .now() + until.timeIntervalSinceNow, execute: work)
             }
         }
     }
@@ -280,8 +283,9 @@ final class Monitor {
             if watches[app.processIdentifier]?.app == app { remove(app.processIdentifier, terminated: true) }
         }
         if name == NSWorkspace.activeSpaceDidChangeNotification || name == NSWorkspace.willSleepNotification || name == NSWorkspace.didWakeNotification {
+            // Watches survive sleep so remembered off-Space windows keep vetoing Quit.
             for watch in watches.values { cancel(watch, reason: L("Cancelled: Space change / sleep / wake")) }
-            if name == NSWorkspace.willSleepNotification { removeAll(); return }
+            if name == NSWorkspace.willSleepNotification { return }
         } else if name != NSWorkspace.didActivateApplicationNotification, let app, let watch = watches[app.processIdentifier] {
             cancel(watch, reason: L("Cancelled: application activity or visibility changed"))
         }
@@ -301,6 +305,9 @@ final class Monitor {
         // updates. Keep its watch through that gap to retain the Quit receipt.
         let departed = watches.filter { $0.value.app.isTerminated }.map(\.key)
         for pid in departed { remove(pid) }
+        for (pid, watch) in watches where watch.app.bundleIdentifier.map({ preferences.reasonExcluded($0, ownID: ownID) != nil }) ?? true {
+            remove(pid)
+        }
         for app in target.map({ [$0] }) ?? apps {
             guard app.processIdentifier > 0, app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
                   app.activationPolicy == .regular, !app.isTerminated,

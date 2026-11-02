@@ -24,7 +24,7 @@ public struct Preferences: Codable, Equatable {
     public static func validBundleID(_ value: String) -> Bool {
         let parts = value.split(separator: ".", omittingEmptySubsequences: false)
         return value.count <= 255 && parts.count >= 2 && parts.allSatisfy {
-            !$0.isEmpty && $0.utf8.allSatisfy { (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 45 }
+            !$0.isEmpty && $0.utf8.allSatisfy { (65...90).contains($0) || (97...122).contains($0) || (48...57).contains($0) || $0 == 45 || $0 == 95 }
         }
     }
     public static func boundedDelay(_ value: Double) -> Double {

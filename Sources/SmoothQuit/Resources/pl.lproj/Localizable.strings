@@ -35,6 +35,7 @@
 "Bundle ID, e.g. com.apple.TextEdit" = "Bundle ID, np. com.apple.TextEdit";
 "Cancel" = "Anuluj";
 "Cancelled: Space change / sleep / wake" = "Anulowano: zmiana Space / uśpienie / wybudzenie";
+"Cancelled: settings changed" = "Anulowano: zmieniono ustawienia";
 "Cancelled: a new window was created" = "Anulowano: utworzono nowe okno";
 "Cancelled: application activity or visibility changed" = "Anulowano: zmiana aktywności lub widoczności aplikacji";
 "Cancelled: uncertain window read" = "Anulowano: niepewny odczyt";
