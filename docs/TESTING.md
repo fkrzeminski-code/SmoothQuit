@@ -180,3 +180,7 @@ SMOOTHQUIT_LIVE_REPEAT=1 swift test --filter IntegrationTests/testLiveRepeatedWh
 ```
 
 Temporarily disable an independently running SmoothQuit to avoid two monitors. After `REPEAT READY`, open and close the main WhatsApp window three times, waiting for each confirmed exit before reopening. Restore the installed monitor afterward. The 600-second operator timeout does not change the production 0.5-second Quit delay.
+
+## 1.6.5 — observation kept across settings and sleep (2026-11-02)
+
+Settings changes and sleep cancel pending decisions without discarding watches, so remembered off-Space identities keep vetoing Quit. Pause expiry uses wall-clock time, and bundle IDs with underscores are accepted. Ordinary validation: **76 tests, 65 passed, 11 opt-in tests skipped, zero failures**, plus the release build checks. Retaining observation across settings changes and sleep was not exercised live on multiple Spaces; it has no deterministic regression test because it requires real AX observers.
